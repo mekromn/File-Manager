@@ -1,0 +1,22 @@
+# Copyrighted / local upstream inputs
+upstream/
+*.apk
+*.apks
+*.xapk
+
+# Generated output
+build/
+dist/
+work/
+
+# Signing material — never commit private keys/passwords
+*.jks
+*.keystore
+*.p12
+*.pfx
+*signing-password*.txt
+*keypass*.txt
+
+# Python
+__pycache__/
+*.pyc
