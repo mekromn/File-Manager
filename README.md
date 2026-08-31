@@ -24,14 +24,15 @@ The first development phase focuses on improving FX as a file manager rather tha
 
 1. Reproducible decode / patch / rebuild / sign / verify pipeline.
 2. Android 16 behavior audit and compatibility testing.
-3. Safe file operations: verification, transactional moves, recovery, operation history, and optional trash/undo.
-4. Advanced search and saved smart-folder queries.
-5. APK power tools: inspect, extract, compare, share, and split-package support.
-6. Optional Shizuku-backed privileged file access, explicitly user-authorized.
-7. Modern image/media handling, including HDR-aware image inspection.
-8. Native media-stack modernization after compatibility tests.
+3. **Dark Glass** and **AMOLED Black Transparent** themes with Pixel blue `#4285F4` accent, integrated into FX's native theme system.
+4. Safe file operations: verification, transactional moves, recovery, operation history, and optional trash/undo.
+5. Advanced search and saved smart-folder queries.
+6. APK power tools: inspect, extract, compare, share, and split-package support.
+7. Optional Shizuku-backed privileged file access, explicitly user-authorized.
+8. Modern image/media handling, including HDR-aware image inspection.
+9. Native media-stack modernization after compatibility tests.
 
-See `docs/BASELINE.md` and `docs/ROADMAP.md` as the project develops.
+See `docs/THEMES.md` for the first FX Extended visual feature specification. Additional baseline and roadmap documentation will be added as implementation proceeds.
 
 ## Important signing note
 
@@ -39,4 +40,4 @@ Any modified APK must be signed with a project-controlled signing key because th
 
 ## Status
 
-Baseline selected and audited. Repository bootstrap in progress.
+FX 9.1.0.8 baseline selected and audited. Theme-system investigation and reproducible patch/build bootstrap are in progress.
