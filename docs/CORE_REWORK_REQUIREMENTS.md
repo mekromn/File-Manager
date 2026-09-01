@@ -11,9 +11,9 @@ The rebuilt application is **DW File Manager**.
 - Surviving app-owned Java/smali namespaces must be migrated away from the upstream vendor namespace to neutral `dw.filemanager.*`-style namespaces through a real DEX rebuild.
 - App-owned intent actions, provider authorities, task affinities, preferences, resource identifiers, serialized class names and reflection strings must be migrated consistently.
 - Upstream vendor branding, logos, names, promotional graphics and app-owned legal/promotional surfaces must not remain in normal UI, resources or surviving app-owned implementation symbols.
-- The app icon must be replaced with a new DW File Manager adaptive icon. The intended visual direction is a clean, modern dark file/folder mark with a restrained DW monogram and Pixel blue `#4285F4` accent, avoiding the upstream FX logo.
+- The app icon must be replaced with a new DW File Manager adaptive icon. The intended visual direction is a clean, modern dark file/folder mark with a restrained DW monogram and Pixel blue `#4285F4` accent, avoiding the upstream logo.
 
-The only tolerated upstream-vendor identity is compatibility data strictly necessary to identify the user's external companion package. It must be confined to the single companion helper/manifest visibility mechanism, must never be displayed, and must not become an internal namespace or branding dependency. If Android package visibility allows the external identifier to be constructed privately at runtime rather than stored as a plain-text app-owned string, prefer that representation.
+The only tolerated upstream identity is compatibility data strictly necessary to identify the user's external companion package. It must be confined to the single companion helper/manifest visibility mechanism, must never be displayed, and must not become an internal namespace or branding dependency. If Android package visibility allows the external identifier to be constructed privately at runtime rather than stored as a plain-text app-owned string, prefer that representation.
 
 ## Structural deletion, not deactivation
 
@@ -37,11 +37,38 @@ When useful file-manager behavior shares a class with retired behavior, the usef
 
 ## Companion-package compatibility helper
 
-There must be only one small internal helper for the external companion package. It returns a boolean after checking that the expected companion is installed and that its signing identity matches the known official certificate. It must not expose or retain a richer state machine.
+Use the absolute simplest safe implementation possible: one pure boolean helper, no object model and no state machine.
 
-No version/state/SKU/catalog/time/refresh/network/account/installer-source logic belongs in this helper. No cached status object, timer, timestamp or UI page is allowed.
+Conceptually it must do only this:
 
-The result is a single boolean consumed by the normal file-manager capability path. No visible status screen, refresh control, activation state or product metadata exists.
+```text
+hasValidCompanion():
+    info = PackageManager lookup(expected external package)
+    if info is missing: return false
+    return signerFingerprint(info) == EXPECTED_FINGERPRINT
+```
+
+Nothing else belongs in this path.
+
+Specifically prohibited:
+
+- caching the result;
+- storing any status object;
+- version checks;
+- installer-source checks;
+- account checks;
+- timestamps;
+- countdowns;
+- refresh/query operations;
+- network calls;
+- SKU/catalog/product logic;
+- activation/evaluation/expiry state;
+- callbacks/listeners;
+- broadcasts;
+- UI, dialogs, notifications or settings;
+- persistence keys related to this check.
+
+The helper returns one boolean and normal file-manager capability code consumes that boolean directly. If the package lookup throws/returns missing, the helper returns false. If the signing identity does not match, it returns false. No other result or state exists.
 
 ## Catalog metadata removal
 
@@ -65,7 +92,7 @@ No surviving file-manager path may depend on catalog metadata. The single compan
 
 Physically remove the old time-window/status system rather than making it inert. This includes all app-owned implementation and resources for:
 
-- trial or evaluation periods;
+- evaluation periods;
 - state/status persistence;
 - activation state;
 - expiry and remaining-time calculations;
@@ -74,8 +101,8 @@ Physically remove the old time-window/status system rather than making it inert.
 - start/refresh/query/import/export logic;
 - state enums/constants and serialized keys;
 - expired/active/time-remaining dialogs, notifications and labels;
-- seven-day or other fixed-duration evaluation logic;
-- product-state coupling to the removed state machine.
+- fixed-duration evaluation logic;
+- catalog-state coupling to the removed state machine.
 
 No dormant state machine classes or persistence keys remain after rebuild.
 
