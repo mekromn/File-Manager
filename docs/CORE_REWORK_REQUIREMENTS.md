@@ -26,11 +26,29 @@ When useful file-manager behavior shares a class with retired behavior, the usef
 
 There must be only one small internal helper for the external companion package. It returns a boolean after checking that the expected package is installed and that its signing identity matches the known official NextApp certificate. It must not expose or retain a richer state machine.
 
-No version/state/product/time/refresh/network/account/installer-source logic belongs in this helper. No cached status object, timer, timestamp or UI page is allowed.
+No version/state/SKU/catalog/time/refresh/network/account/installer-source logic belongs in this helper. No cached status object, timer, timestamp or UI page is allowed.
+
+## Catalog metadata removal
+
+The simplified companion boolean makes the old catalog/SKU layer unnecessary. Physically remove all app-owned code and resources whose only purpose is describing, querying, caching, validating, serializing or displaying catalog items.
+
+This includes:
+
+- SKU identifiers and catalog codes;
+- catalog item/detail/state models;
+- catalog query/request/result classes;
+- catalog caches and refresh paths;
+- catalog JSON fields and persistence keys;
+- catalog-specific signatures/tokens;
+- catalog UI labels, descriptions, buttons and dialogs;
+- catalog-specific broadcasts, callbacks and listeners;
+- branches that choose behavior based on a catalog identifier or catalog state.
+
+No surviving file-manager path may depend on catalog metadata. The single companion-package compatibility helper is the only gate.
 
 ## Developer settings cleanup
 
-The legacy `googleIabDisable` developer preference in `res/k_.xml` must be structurally removed from the preference XML. Its title/summary resources, preference key, read/write code and every call site must also be removed. It must not remain as a hidden preference.
+The legacy store-disable developer preference in `res/k_.xml` must be structurally removed from the preference XML. Its title/summary resources, preference key, read/write code and every call site must also be removed. It must not remain as a hidden preference.
 
 ## Network minimization and telemetry removal
 
@@ -49,11 +67,11 @@ Physically remove app-owned code and resources for:
 - data-transport pipelines used only for telemetry;
 - endpoints and services used only by those paths.
 
-Do not blindly delete networking or authentication libraries needed for normal file-manager functions. Every outbound path must be classified by call site and purpose first. User-requested SMB/FTP/SFTP/WebDAV/cloud/Web Access behavior is normal product functionality and must remain working.
+Do not blindly delete networking or authentication libraries needed for normal file-manager functions. Every outbound path must be classified by call site and purpose first. User-requested SMB/FTP/SFTP/WebDAV/cloud/Web Access behavior is normal file-manager functionality and must remain working.
 
 ## Google-library audit
 
-Do not infer purpose from package names alone. For each Google/Firebase/Play-services/DataTransport class or manifest component, trace references before removal.
+Do not infer purpose from package names alone. For each Google/Firebase/service-runtime/DataTransport class or manifest component, trace references before removal.
 
 - Analytics/measurement/telemetry-only code: remove structurally.
 - DataTransport used only by telemetry: remove structurally.
