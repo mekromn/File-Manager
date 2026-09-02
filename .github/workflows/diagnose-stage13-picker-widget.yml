@@ -32,9 +32,16 @@ jobs:
           from pathlib import Path
           import re, shutil
           root=Path('decoded'); sm=root/'smali'
-          seeds=['eg/g','nf/a','dw/filemanager/ui/filechooser/ChooserActivity','kh/p','kh/o','hf/j0','hf/g0','be/j','gf/o','af/k','af/j','lf/p','lf/s','lf/r','dw/filemanager/ui/content/k']
+          seeds=[
+            'eg/g','nf/a','dw/filemanager/ui/filechooser/ChooserActivity',
+            'kh/p','kh/o','hf/j0','hf/g0','be/j','gf/o',
+            'af/k','af/j','hg/a','lf/p','lf/m','lf/q','lf/s','lf/r',
+            'dw/filemanager/ui/widget/m0','dw/filemanager/ui/content/k',
+            'dw/filemanager/ui/content/e','dw/filemanager/ui/content/u'
+          ]
           copied=set(); queue=list(seeds)
-          for _ in range(3):
+          prefixes=('eg/','nf/','kh/','hf/','be/','gf/','af/','hg/','lf/','dw/filemanager/ui/content/','dw/filemanager/ui/widget/')
+          for _ in range(4):
             nextq=[]
             for cls in queue:
               if cls in copied: continue
@@ -44,15 +51,14 @@ jobs:
               t=p.read_text(errors='ignore')
               for ref in re.findall(r'L([A-Za-z0-9_$/]+);',t):
                 if ref.startswith(('java/','android/','androidx/','kotlin/')): continue
-                if ref.startswith(('eg/','nf/','kh/','hf/','be/','gf/','af/','lf/','dw/filemanager/ui/content/')): nextq.append(ref)
+                if ref.startswith(prefixes): nextq.append(ref)
             queue=nextq
           hits=[]
           for p in sm.rglob('*.smali'):
             t=p.read_text(errors='ignore')
-            if 'Leg/g;->' in t or 'Lkh/p;->' in t or 'Lkh/o;->' in t or 'Lhf/j0;->' in t:
-              if any(x in t for x in ('Leg/g;->','Lkh/p;->a:Z','Lkh/p;->b:Lkh/o;','Lhf/j0;->','setSort','sort')):
-                hits.append(f'===== {p.relative_to(sm)} =====\n'+t)
-          Path('diag/sort-hits.txt').write_text('\n'.join(hits)+'\n')
+            if any(x in t for x in ('Leg/g;->','Lkh/p;->','Lhf/j0;->','Ldw/filemanager/ui/widget/m0;->','action_view_icon','action_view_grid','action_view_list','action_pie','action_search','action_filter','action_folder_sort_save')):
+              hits.append(f'===== {p.relative_to(sm)} =====\n'+t)
+          Path('diag/panel-hits.txt').write_text('\n'.join(hits)+'\n')
           print('captured',len(copied),sorted(copied))
           PY
       - uses: actions/upload-artifact@v4
