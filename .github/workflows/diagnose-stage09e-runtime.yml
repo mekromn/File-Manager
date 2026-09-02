@@ -1,0 +1,101 @@
+name: Diagnose Stage 09e runtime regression
+
+on:
+  push:
+    branches: [stage11-runtime-repair]
+    paths:
+      - '.github/workflows/diagnose-stage09e-runtime.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download immutable base and Apktool
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 4 --retry-all-errors -o fx.apk 'https://d.apkpure.net/b/APK/nextapp.fx?version=latest'
+          echo '19af15780d0fc65242ed3f97d6397adfbb0055225cef84ccbc2c777b906bf2c6  fx.apk' | sha256sum -c -
+          curl -fL --retry 4 --retry-all-errors -o apktool.jar 'https://github.com/iBotPeaches/Apktool/releases/download/v3.0.3/apktool_3.0.3.jar'
+          echo 'dbf930b076c6b9be08d57c449cacefc3bdd6b71ebd59b3066fc0e1f5b14f9423  apktool.jar' | sha256sum -c -
+          java -jar apktool.jar d -f fx.apk -o decoded
+
+      - name: Replay through Stage 09d
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r stage; do
+            b="$(basename "$stage")"
+            [[ "$b" == stage09e_* ]] && break
+            python3 "$stage" decoded
+          done < <(find tools/stages -maxdepth 1 -type f -name 'stage*.py' -print | LC_ALL=C sort)
+
+      - name: Capture pre-09e shared runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p diag/pre diag/post diag/final
+          files=(
+            smali/ab/d.smali smali/l0/h.smali smali/ae/d.smali smali/kf/d.smali
+            smali/b9/e.smali smali/k2/p.smali smali/k2/y.smali smali/x/b.smali
+            smali/a7/b.smali smali/androidx/emoji2/text/o.smali smali/androidx/emoji2/text/j.smali
+            smali/s5/a.smali smali/rd/c.smali smali/g6/a.smali smali/t4/j.smali
+            smali/androidx/activity/i.smali smali/androidx/fragment/app/d.smali smali/kh/n.smali
+            smali/r5/g.smali smali/u5/g.smali smali/kb/a.smali
+          )
+          for f in "${files[@]}"; do
+            if [[ -f "decoded/$f" ]]; then mkdir -p "diag/pre/$(dirname "$f")"; cp "decoded/$f" "diag/pre/$f"; fi
+          done
+          find decoded/smali/com/google/android/gms -type f -name '*.smali' -printf '%P\n' | sort > diag/pre/gms-files.txt || true
+
+      - name: Apply Stage 09e and capture post-state
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/stages/stage09e_remove_google_services.py decoded
+          files=(
+            smali/ab/d.smali smali/l0/h.smali smali/ae/d.smali smali/kf/d.smali
+            smali/b9/e.smali smali/k2/p.smali smali/k2/y.smali smali/x/b.smali
+            smali/a7/b.smali smali/androidx/emoji2/text/o.smali smali/androidx/emoji2/text/j.smali
+            smali/s5/a.smali smali/rd/c.smali smali/g6/a.smali smali/t4/j.smali
+            smali/androidx/activity/i.smali smali/androidx/fragment/app/d.smali smali/kh/n.smali
+            smali/r5/g.smali smali/u5/g.smali smali/kb/a.smali
+          )
+          for f in "${files[@]}"; do
+            if [[ -f "decoded/$f" ]]; then mkdir -p "diag/post/$(dirname "$f")"; cp "decoded/$f" "diag/post/$f"; fi
+          done
+          diff -ru diag/pre diag/post > diag/stage09e-shared.diff || true
+
+      - name: Replay remainder and collect final crash-path evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          for stage in $(find tools/stages -maxdepth 1 -type f -name 'stage*.py' -print | LC_ALL=C sort); do
+            b="$(basename "$stage")"
+            case "$b" in
+              stage0[1-8]*|stage09[abcd]_*) continue ;;
+              stage09e_*) continue ;;
+            esac
+            python3 "$stage" decoded
+          done
+          cp decoded/AndroidManifest.xml diag/final/AndroidManifest.xml
+          cp decoded/res/values/strings.xml diag/final/strings.xml
+          cp decoded/res/values/public.xml diag/final/public.xml
+          find decoded/res/xml -maxdepth 1 -type f -iname '*pref*' -print | sort > diag/final/preference-files.txt
+          grep -RniE '(^|[^A-Za-z])FX([^A-Za-z]|$)|FX File Explorer|FX Connect|Invalid extras sent to FX viewer' decoded/res decoded/smali/dw decoded/AndroidManifest.xml > diag/final/fx-hits.txt || true
+          grep -RniE 'Settings|RecentHomeItem|RecentFile|ImageViewer|InternalImageViewer|VideoContent|VideoHome|viewer' decoded/AndroidManifest.xml decoded/smali/dw > diag/final/crash-path-hits.txt || true
+          grep -Rni 'com/google/android/gms\|Lr5/\|Ls5/\|Lt5/\|Lu5/\|Lw5/' decoded/smali/dw decoded/smali/androidx > diag/final/removed-runtime-refs.txt || true
+          find decoded/smali/dw/filemanager -type f \( -iname '*Setting*.smali' -o -iname '*Recent*.smali' -o -iname '*Image*.smali' -o -iname '*Video*.smali' \) -print | sort > diag/final/interesting-files.txt
+
+      - name: Upload diagnostics
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage09e-runtime-diagnostic
+          path: diag
+          retention-days: 3
