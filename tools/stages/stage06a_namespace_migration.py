@@ -46,6 +46,10 @@ CLASS_REPL=[
     ('dw.filemanager.ext.ui.PlusExtension','dw.filemanager.ext.ui.ExtExtension'),
     ('dw.filemanager.ext.ui.PlusHomeItem','dw.filemanager.ext.ui.ExtHomeItem'),
     ('dw.filemanager.ext.PlusCore','dw.filemanager.ext.ExtCore'),
+    # The Apps list click handler constructs this Activity by dotted class name via
+    # Intent.setClassName(). The implementation lives in the former plus/extension tree,
+    # so the generic nextapp.fx -> dw.filemanager rewrite alone leaves a stale base path.
+    ('dw.filemanager.ui.app.AppDetailsActivity','dw.filemanager.ext.ui.app.AppDetailsActivity'),
 ]
 
 def rewrite(path:Path, replacements):
@@ -122,6 +126,16 @@ def main():
         raise RuntimeError('old shaded class files remain')
     for old in ('PlusCore','PlusExtension','PlusHomeItem','PlusRegistry'):
         if old in smali_text: raise RuntimeError(f'legacy class identifier remains: {old}')
-    print(f'stage06a namespace migration complete; moved {moved} class files')
+
+    stale='dw.filemanager.ui.app.AppDetailsActivity'
+    actual='dw.filemanager.ext.ui.app.AppDetailsActivity'
+    if stale in smali_text: raise RuntimeError('stale AppDetailsActivity explicit class path remains')
+    appdetails=sm/'dw/filemanager/ext/ui/app/AppDetailsActivity.smali'
+    if not appdetails.exists(): raise RuntimeError('migrated AppDetailsActivity implementation missing')
+    gf=(sm/'gf/c.smali').read_text()
+    if gf.count(actual)!=1 or 'Intent;->setClassName' not in gf:
+        raise RuntimeError('Apps click handler does not target migrated AppDetailsActivity exactly once')
+
+    print(f'stage06a namespace migration complete; moved {moved} class files; AppDetails explicit target migrated')
 
 if __name__=='__main__': main()
