@@ -94,7 +94,7 @@ jobs:
           print('captured', sum(1 for x in out if x.startswith('=====')), 'companion call sites')
           PY
 
-      - name: Apply Stage 10b and collect final crash-path evidence
+      - name: Apply Stage 10b and collect full crash-path evidence
         shell: bash
         run: |
           set -euo pipefail
@@ -104,9 +104,30 @@ jobs:
           cp decoded/res/values/public.xml diag/final/public.xml
           find decoded/res/xml -maxdepth 1 -type f -iname '*pref*' -print | sort > diag/final/preference-files.txt
           grep -RniE '(^|[^A-Za-z])FX([^A-Za-z]|$)|FX File Explorer|FX Connect|Invalid extras sent to FX viewer' decoded/res decoded/smali/dw decoded/AndroidManifest.xml > diag/final/fx-hits.txt || true
-          grep -RniE 'Settings|RecentHomeItem|RecentFile|ImageViewer|InternalImageViewer|VideoContent|VideoHome|viewer' decoded/AndroidManifest.xml decoded/smali/dw > diag/final/crash-path-hits.txt || true
           grep -Rni 'com/google/android/gms\|Lr5/\|Ls5/\|Lt5/\|Lu5/\|Lw5/' decoded/smali/dw decoded/smali/androidx > diag/final/removed-runtime-refs.txt || true
-          find decoded/smali/dw/filemanager -type f \( -iname '*Setting*.smali' -o -iname '*Recent*.smali' -o -iname '*Image*.smali' -o -iname '*Video*.smali' \) -print | sort > diag/final/interesting-files.txt
+
+          # Full files for the reported crash paths and their common UI framework.
+          mkdir -p diag/final/smali/dw/filemanager/ui diag/final/smali/dw/filemanager/ext/ui diag/final/res/xml diag/final/res/drawable diag/final/res/mipmap-hdpi
+          cp -a decoded/smali/dw/filemanager/ui/fxsystem diag/final/smali/dw/filemanager/ui/ || true
+          cp -a decoded/smali/dw/filemanager/ui/viewer diag/final/smali/dw/filemanager/ui/ || true
+          cp -a decoded/smali/dw/filemanager/ui/homeimpl diag/final/smali/dw/filemanager/ui/ || true
+          cp -a decoded/smali/dw/filemanager/ui/search diag/final/smali/dw/filemanager/ui/ || true
+          cp -a decoded/smali/dw/filemanager/ui/tabactivity diag/final/smali/dw/filemanager/ui/ || true
+          cp -a decoded/smali/dw/filemanager/ui/content diag/final/smali/dw/filemanager/ui/ || true
+          cp -a decoded/smali/dw/filemanager/ext/ui/image diag/final/smali/dw/filemanager/ext/ui/ || true
+          cp -a decoded/smali/dw/filemanager/ext/ui/video diag/final/smali/dw/filemanager/ext/ui/ || true
+          cp decoded/res/xml/dw_filemanager_module.xml diag/final/res/xml/ || true
+          cp decoded/res/xml/iconset_dynamic_ext.xml diag/final/res/xml/ || true
+          cp decoded/res/xml/iconset_dynamic_base.xml diag/final/res/xml/ || true
+          find decoded/res -type f \( -iname '*fx*' -o -iname '*logo*' -o -iname '*launcher*' \) -print | sort > diag/final/fx-resource-files.txt
+          while IFS= read -r f; do
+            rel="${f#decoded/}"; mkdir -p "diag/final/$(dirname "$rel")"; cp "$f" "diag/final/$rel";
+          done < diag/final/fx-resource-files.txt
+
+          # Which Stage09e-modified helpers are referenced by the four crash-path trees?
+          grep -RniE 'L(androidx/activity/i|androidx/fragment/app/d|androidx/emoji2/text/j|androidx/emoji2/text/o|r5/g|u5/g|rd/c|kh/n|t4/j|g6/a|kb/a);' \
+            decoded/smali/dw/filemanager/ui/fxsystem decoded/smali/dw/filemanager/ui/viewer decoded/smali/dw/filemanager/ui/homeimpl decoded/smali/dw/filemanager/ui/search decoded/smali/dw/filemanager/ui/tabactivity decoded/smali/dw/filemanager/ui/content decoded/smali/dw/filemanager/ext/ui/image decoded/smali/dw/filemanager/ext/ui/video \
+            > diag/final/shared-helper-refs-from-crash-paths.txt || true
 
       - name: Upload diagnostics
         uses: actions/upload-artifact@v4
