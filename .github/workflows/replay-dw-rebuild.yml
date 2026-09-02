@@ -1,0 +1,77 @@
+name: Replay DW rebuild
+
+on:
+  pull_request:
+    paths:
+      - 'tools/stages/**'
+      - 'assets/dw-icons/**'
+      - 'docs/checkpoints/**'
+      - 'docs/CURRENT_DW_REBUILD_STATE.md'
+      - '.github/workflows/replay-dw-rebuild.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  replay:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download immutable FX 9.1.0.8 base
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 4 --retry-all-errors --connect-timeout 20 \
+            -o fx-9.1.0.8.apk \
+            'https://d.apkpure.net/b/APK/nextapp.fx?version=latest'
+          echo '19af15780d0fc65242ed3f97d6397adfbb0055225cef84ccbc2c777b906bf2c6  fx-9.1.0.8.apk' | sha256sum -c -
+
+      - name: Download pinned Apktool 3.0.3
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 4 --retry-all-errors --connect-timeout 20 \
+            -o apktool.jar \
+            'https://github.com/iBotPeaches/Apktool/releases/download/v3.0.3/apktool_3.0.3.jar'
+          echo 'dbf930b076c6b9be08d57c449cacefc3bdd6b71ebd59b3066fc0e1f5b14f9423  apktool.jar' | sha256sum -c -
+
+      - name: Decode canonical base
+        shell: bash
+        run: |
+          set -euo pipefail
+          java -jar apktool.jar d -f fx-9.1.0.8.apk -o decoded
+
+      - name: Replay every checked-in transformation stage
+        shell: bash
+        run: |
+          set -euo pipefail
+          : > replay-stages.txt
+          while IFS= read -r stage; do
+            echo "$stage" | tee -a replay-stages.txt
+            python3 "$stage" decoded
+          done < <(find tools/stages -maxdepth 1 -type f -name 'stage*.py' -print | LC_ALL=C sort)
+
+      - name: Build unsigned replay APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          java -jar apktool.jar b decoded -o DW-File-Manager-replay-unsigned.apk
+          unzip -tq DW-File-Manager-replay-unsigned.apk
+          sha256sum DW-File-Manager-replay-unsigned.apk | tee DW-File-Manager-replay-unsigned.apk.sha256
+          printf 'classes=' >> replay-metrics.txt
+          find decoded -path '*/smali*/*.smali' -type f | wc -l >> replay-metrics.txt
+          printf 'size=' >> replay-metrics.txt
+          stat -c '%s' DW-File-Manager-replay-unsigned.apk >> replay-metrics.txt
+
+      - name: Upload replay evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: dw-replay-unsigned
+          path: |
+            DW-File-Manager-replay-unsigned.apk
+            DW-File-Manager-replay-unsigned.apk.sha256
+            replay-stages.txt
+            replay-metrics.txt
+          retention-days: 3
