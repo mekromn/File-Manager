@@ -6,6 +6,8 @@ on:
     branches: [stage13-picker-sorting]
     paths:
       - '.github/workflows/diagnose-stage13-picker-widget.yml'
+      - 'tools/stages/stage12d_internal_file_associations.py'
+      - 'tools/stages/stage13*.py'
 
 permissions:
   contents: read
@@ -44,7 +46,6 @@ jobs:
                 if ref.startswith(('java/','android/','androidx/','kotlin/')): continue
                 if ref.startswith(('eg/','nf/','kh/','af/','lf/','dw/filemanager/ui/content/')): nextq.append(ref)
             queue=nextq
-          # Also find every invocation on Leg/g and every field access to kh/p sort state.
           hits=[]
           for p in sm.rglob('*.smali'):
             t=p.read_text(errors='ignore')
