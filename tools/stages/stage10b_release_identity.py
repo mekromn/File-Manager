@@ -73,16 +73,20 @@ def replace_helper_with_minimal_boolean(root,rid):
 
 def add_one_appwide_gate(root):
     app=root/'smali/dw/filemanager/DWApplication.smali'
-    t=app.read_text(); s=t.index('.method public onCreate()V'); e=t.index('.end method',s)+len('.end method')
+    t=app.read_text()
+    mm=re.search(r'(?m)^\.method[^\n]*\bonCreate\(\)V\s*$',t)
+    if not mm: raise RuntimeError('DWApplication.onCreate method declaration not found')
+    s=mm.start(); e=t.index('.end method',s)+len('.end method')
     m=t[s:e]
     decl=re.search(r'(?m)^\s*\.(locals|registers)\s+(\d+)\s*$',m)
     if not decl: raise RuntimeError('DWApplication.onCreate register declaration missing')
     kind=decl.group(1); count=int(decl.group(2))
     if kind=='locals' and count<1:
-        m=m[:decl.start()]+f'    .locals 1'+m[decl.end():]
-    elif kind=='registers' and count<2:  # p0 + one local v0
-        m=m[:decl.start()]+f'    .registers 2'+m[decl.end():]
+        m=m[:decl.start()]+'    .locals 1'+m[decl.end():]
+    elif kind=='registers' and count<2:
+        m=m[:decl.start()]+'    .registers 2'+m[decl.end():]
     decl2=re.search(r'(?m)^\s*\.(?:locals|registers)\s+\d+\s*\n',m)
+    if not decl2: raise RuntimeError('DWApplication.onCreate register line not found after resize')
     gate='''\n    invoke-static {p0}, Ldw/filemanager/core/Companion;->present(Landroid/content/Context;)Z\n    move-result v0\n    if-nez v0, :dw_companion_ok\n\n    const/4 v0, 0x0\n    invoke-static {v0}, Ljava/lang/System;->exit(I)V\n    return-void\n\n    :dw_companion_ok\n'''
     m=m[:decl2.end()]+gate+m[decl2.end():]
     app.write_text(t[:s]+m+t[e:])
@@ -90,7 +94,6 @@ def add_one_appwide_gate(root):
 def main():
     ap=argparse.ArgumentParser(); ap.add_argument('decoded',type=Path); a=ap.parse_args(); root=a.decoded
 
-    # Freeze final package/version identity.
     yml=root/'apktool.yml'; t=yml.read_text()
     t,n=re.subn(r'(versionCode:\s*)[^\n]+',r'\g<1>'+VERSION_CODE,t,count=1)
     if n!=1: raise RuntimeError('versionCode field not found')
@@ -104,7 +107,6 @@ def main():
     if f'package="{PACKAGE}"' not in mt: raise RuntimeError('final package identity mismatch')
     if 'com.google.android.gms' in mt: raise RuntimeError('GMS manifest reference remains')
 
-    # Consolidate the package name to ONE value total while retaining Android 11+ visibility.
     if mt.count(COMPANION)!=1: raise RuntimeError(f'pre-consolidation manifest companion literal count={mt.count(COMPANION)}')
     rid=allocate_string_resource(root)
     mt=mt.replace(f'android:name="{COMPANION}"',f'android:name="@string/{RESOURCE_NAME}"',1)
@@ -114,7 +116,6 @@ def main():
     replace_helper_with_minimal_boolean(root,rid)
     add_one_appwide_gate(root)
 
-    # Final structural invariants.
     gms=list(root.glob('smali*/com/google/android/gms/**/*.smali'))
     if gms: raise RuntimeError('GMS classes remain: '+str([str(x.relative_to(root)) for x in gms[:10]]))
 
