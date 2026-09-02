@@ -1,0 +1,97 @@
+name: Diagnose DW picker sorting
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [stage12-filetype-open-associations]
+    paths:
+      - '.github/workflows/diagnose-picker-sorting.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Decode stable baseline and locate picker
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 4 --retry-all-errors -o fx.apk 'https://d.apkpure.net/b/APK/nextapp.fx?version=latest'
+          echo '19af15780d0fc65242ed3f97d6397adfbb0055225cef84ccbc2c777b906bf2c6  fx.apk' | sha256sum -c -
+          curl -fL --retry 4 --retry-all-errors -o apktool.jar 'https://github.com/iBotPeaches/Apktool/releases/download/v3.0.3/apktool_3.0.3.jar'
+          echo 'dbf930b076c6b9be08d57c449cacefc3bdd6b71ebd59b3066fc0e1f5b14f9423  apktool.jar' | sha256sum -c -
+          java -jar apktool.jar d -f fx.apk -o decoded
+          while IFS= read -r stage; do python3 "$stage" decoded; done < <(find tools/stages -maxdepth 1 -type f -name 'stage*.py' -print | LC_ALL=C sort)
+          mkdir -p diag/full
+          python3 - <<'PY'
+          from pathlib import Path
+          import re, shutil
+          root=Path('decoded')
+          needles=[
+            'use this folder','new folder','select folder','choose folder','folder picker',
+            'ACTION_OPEN_DOCUMENT_TREE','android.intent.action.OPEN_DOCUMENT_TREE',
+            'DocumentsContract','EXTRA_INITIAL_URI'
+          ]
+          hits=[]
+          ids=set()
+          # Find human strings/resources first.
+          for p in (root/'res').rglob('*.xml'):
+            t=p.read_text(errors='ignore')
+            tl=t.lower()
+            if any(n.lower() in tl for n in needles):
+              hits.append(f'===== {p.relative_to(root)} =====\n{t}')
+              for m in re.finditer(r'<string\s+name="([^"]+)"[^>]*>(.*?)</string>',t,re.S):
+                if any(n in re.sub(r'<.*?>','',m.group(2)).lower() for n in ('use this folder','new folder','select folder','choose folder')):
+                  ids.add(m.group(1))
+          Path('diag/picker-resource-hits.txt').write_text('\n'.join(hits)+'\n')
+          Path('diag/picker-string-names.txt').write_text('\n'.join(sorted(ids))+'\n')
+
+          # Resolve public resource ids for those names and find all executable consumers.
+          pub=root/'res/values/public.xml'
+          public=pub.read_text(errors='ignore') if pub.exists() else ''
+          rid=[]
+          for name in ids:
+            for m in re.finditer(r'<public\s+type="([^"]+)"\s+name="'+re.escape(name)+r'"\s+id="([^"]+)"',public):
+              rid.append((name,m.group(1),m.group(2)))
+          Path('diag/picker-resource-ids.txt').write_text('\n'.join(map(str,rid))+'\n')
+          tokens={r[2].lower() for r in rid}
+
+          consumers=[]
+          candidate=set()
+          for sd in root.glob('smali*'):
+            for p in sd.rglob('*.smali'):
+              t=p.read_text(errors='ignore')
+              low=t.lower()
+              if any(tok in low for tok in tokens) or any(n in low for n in ('open_document_tree','documentscontract')):
+                consumers.append(f'===== {p.relative_to(root)} =====\n{t}')
+                candidate.add(p)
+          Path('diag/picker-consumers.txt').write_text('\n'.join(consumers)+'\n')
+
+          # Capture sort/comparator/list-adapter neighbors referenced by picker candidates.
+          refs=set()
+          for p in candidate:
+            t=p.read_text(errors='ignore')
+            for cls in re.findall(r'L([A-Za-z0-9_$/]+);',t):
+              if cls.startswith(('java/','android/','androidx/','kotlin/')): continue
+              refs.add(cls)
+          copied=0
+          for cls in refs:
+            p=root/'smali'/(cls+'.smali')
+            if p.exists() and any(x in p.read_text(errors='ignore') for x in ('Comparator','sort(','Collections;->sort','setAdapter','RecyclerView','ListView')):
+              dest=Path('diag/full')/(cls.replace('/','__')+'.smali')
+              shutil.copy2(p,dest); copied+=1
+          for p in candidate:
+            dest=Path('diag/full')/(str(p.relative_to(root)).replace('/','__'))
+            shutil.copy2(p,dest); copied+=1
+          print('string_names',sorted(ids))
+          print('resource_ids',rid)
+          print('candidate_files',len(candidate),'captured',copied)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dw-picker-sorting-diagnostic
+          path: diag
+          retention-days: 3
