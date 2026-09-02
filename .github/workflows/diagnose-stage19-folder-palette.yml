@@ -43,37 +43,43 @@ jobs:
               m=re.search(r'<public\s+type="string"\s+name="'+re.escape(name)+r'"\s+id="([^"]+)"',public)
               if m: ids[name]=m.group(1).lower()
           Path('diag/string-ids.txt').write_text('\n'.join(f'{k}={v}' for k,v in ids.items())+'\n')
-          cand=[]
+          cand=[]; chooser=[]
           for sd in root.glob('smali*'):
               for p in sd.rglob('*.smali'):
                   t=p.read_text(errors='ignore'); low=t.lower(); hits=[]
                   for n,rid in ids.items():
                       if rid in low or n in t: hits.append(n)
                   if any(x in low for x in ('selecticon','foldericon','iconstyle','dynamicmaterial','themeicon')): hits.append('name/path')
-                  if hits:
-                      cand.append((p,hits))
+                  if hits: cand.append((p,hits))
+                  if any(x in t for x in ('Ldw/filemanager/ui/widget/c0;','Lkc/a;')): chooser.append(p)
           out=[]
           for p,hits in cand:
               out.append(f'===== {p.relative_to(root)} :: {", ".join(hits)} =====\n'+p.read_text(errors='ignore'))
               shutil.copy2(p,Path('diag/full')/(str(p.relative_to(root)).replace('/','__')))
           Path('diag/candidates.txt').write_text('\n'.join(out)+'\n')
-          # Inventory likely folder/icon resources and XML arrays/layouts.
+          co=[]
+          for p in chooser:
+              co.append(f'===== {p.relative_to(root)} =====\n'+p.read_text(errors='ignore'))
+              shutil.copy2(p,Path('diag/full')/(str(p.relative_to(root)).replace('/','__')))
+          Path('diag/iconchooser-callers.txt').write_text('\n'.join(co)+'\n')
+          for cls in ('kc/a','dw/filemanager/ui/widget/c0','dw/filemanager/ui/res/ItemIcons','vf/d'):
+              p=sm/(cls+'.smali')
+              if p.exists(): shutil.copy2(p,Path('diag/full')/(cls.replace('/','__')+'.smali'))
           lines=[]
           for p in res.rglob('*'):
               if not p.is_file(): continue
               s=str(p.relative_to(root)).lower()
-              if any(x in s for x in ('folder','icon','theme')):
-                  lines.append(str(p.relative_to(root)))
+              if any(x in s for x in ('folder','icon','theme')): lines.append(str(p.relative_to(root)))
           Path('diag/resource-files.txt').write_text('\n'.join(sorted(lines))+'\n')
           xml=[]
           for p in res.rglob('*.xml'):
               t=p.read_text(errors='ignore')
-              if any(n.lower() in t.lower() for n in ('dynamic material','copper','khaki','select icon')):
+              if any(n.lower() in t.lower() for n in ('dynamic material','copper','khaki','select icon','icon-theme-set','iconset_dynamic')):
                   xml.append(f'===== {p.relative_to(root)} =====\n{t}')
           Path('diag/resource-context.txt').write_text('\n'.join(xml)+'\n')
           print('string_names',sorted(names))
-          print('candidate_count',len(cand))
-          for p,h in cand[:80]: print(p.relative_to(root),h)
+          print('candidate_count',len(cand),'chooser_related',len(chooser))
+          for p in chooser[:80]: print('CHOOSER',p.relative_to(root))
           PY
       - uses: actions/upload-artifact@v4
         with:
