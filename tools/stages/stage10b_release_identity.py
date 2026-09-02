@@ -4,7 +4,7 @@ import argparse,re
 
 PACKAGE='com.mekromn.dwfilemanager'
 VERSION_CODE='9109000'
-VERSION_NAME='9.1.0.8-DW'
+VERSION_NAME='9.1.0.8'
 TARGET_SDK='34'
 COMPANION='nextapp.fx.rk'
 RESOURCE_NAME='dw_companion_package'
@@ -20,7 +20,6 @@ def next_instruction(lines,start):
     return None,None
 
 def flatten_distributed_checks(root):
-    """Remove all old/per-feature companion gates. App-wide startup gate owns the policy."""
     calls=0; files=0
     for sd in root.glob('smali*'):
         for p in sd.rglob('*.smali'):
@@ -43,33 +42,28 @@ def flatten_distributed_checks(root):
     return calls,files
 
 def allocate_string_resource(root):
-    """Create one package-name value and return its stable numeric resource id."""
     strings=root/'res/values/strings.xml'; st=strings.read_text()
     if RESOURCE_NAME in st: raise RuntimeError('companion package resource already exists')
     st=st.replace('</resources>',f'    <string name="{RESOURCE_NAME}" translatable="false">{COMPANION}</string>\n</resources>',1)
     strings.write_text(st)
 
     public=root/'res/values/public.xml'; pt=public.read_text()
-    ids=[]
-    for m in re.finditer(r'<public type="string" name="[^"]+" id="(0x[0-9a-fA-F]+)"\s*/>',pt):
-        ids.append(int(m.group(1),16))
+    ids=[int(m.group(1),16) for m in re.finditer(r'<public type="string" name="[^"]+" id="(0x[0-9a-fA-F]+)"\s*/>',pt)]
     if not ids: raise RuntimeError('no public string ids found')
     prefix=ids[0] & 0xffff0000
     if any((x & 0xffff0000)!=prefix for x in ids): raise RuntimeError('string resource id type prefix inconsistent')
     rid=max(ids)+1
-    if (rid & 0xffff0000)!=prefix or (rid & 0xffff)==0:
-        raise RuntimeError('no safe next public string id')
+    if (rid & 0xffff0000)!=prefix or (rid & 0xffff)==0: raise RuntimeError('no safe next public string id')
     all_ids={int(x,16) for x in re.findall(r'id="(0x[0-9a-fA-F]+)"',pt)}
     if rid in all_ids: raise RuntimeError('chosen companion resource id already used')
-    pub=f'    <public type="string" name="{RESOURCE_NAME}" id="0x{rid:08x}" />\n'
-    pt=pt.replace('</resources>',pub+'</resources>',1)
+    pt=pt.replace('</resources>',f'    <public type="string" name="{RESOURCE_NAME}" id="0x{rid:08x}" />\n</resources>',1)
     public.write_text(pt)
     return rid
 
 def replace_helper_with_minimal_boolean(root,rid):
     helper=root/'smali/dw/filemanager/core/Companion.smali'
     if not helper.exists(): raise RuntimeError('Stage02 Companion helper missing')
-    helper.write_text(f'''.class public final Ldw/filemanager/core/Companion;\n.super Ljava/lang/Object;\n\n# The only companion check in DW. Package name only; no signer/version/state/cache logic.\n.method public static present(Landroid/content/Context;)Z\n    .locals 3\n\n    :try_start_dw\n    invoke-virtual {{p0}}, Landroid/content/Context;->getPackageManager()Landroid/content/pm/PackageManager;\n    move-result-object v0\n\n    const v1, 0x{rid:08x}\n    invoke-virtual {{p0, v1}}, Landroid/content/Context;->getString(I)Ljava/lang/String;\n    move-result-object v1\n\n    const/4 v2, 0x0\n    invoke-virtual {{v0, v1, v2}}, Landroid/content/pm/PackageManager;->getPackageInfo(Ljava/lang/String;I)Landroid/content/pm/PackageInfo;\n\n    const/4 v0, 0x1\n    :try_end_dw\n    .catch Landroid/content/pm/PackageManager$NameNotFoundException; {{:try_start_dw .. :try_end_dw}} :missing\n    return v0\n\n    :missing\n    const/4 v0, 0x0\n    return v0\n.end method\n''')
+    helper.write_text(f'''.class public final Ldw/filemanager/core/Companion;\n.super Ljava/lang/Object;\n\n# The only companion check in DW. Package name only.\n.method public static present(Landroid/content/Context;)Z\n    .locals 3\n\n    :try_start_dw\n    invoke-virtual {{p0}}, Landroid/content/Context;->getPackageManager()Landroid/content/pm/PackageManager;\n    move-result-object v0\n\n    const v1, 0x{rid:08x}\n    invoke-virtual {{p0, v1}}, Landroid/content/Context;->getString(I)Ljava/lang/String;\n    move-result-object v1\n\n    const/4 v2, 0x0\n    invoke-virtual {{v0, v1, v2}}, Landroid/content/pm/PackageManager;->getPackageInfo(Ljava/lang/String;I)Landroid/content/pm/PackageInfo;\n\n    const/4 v0, 0x1\n    :try_end_dw\n    .catch Landroid/content/pm/PackageManager$NameNotFoundException; {{:try_start_dw .. :try_end_dw}} :missing\n    return v0\n\n    :missing\n    const/4 v0, 0x0\n    return v0\n.end method\n''')
 
 def add_one_appwide_gate(root):
     app=root/'smali/dw/filemanager/DWApplication.smali'
@@ -148,8 +142,7 @@ def main():
     banned=('MessageDigest','Base64','signatures','versionCode','installer','SharedPreferences','Broadcast','http://','https://')
     bad=[x for x in banned if x in h]
     if bad: raise RuntimeError('minimal companion helper contains forbidden logic: '+str(bad))
-    if h.count('getPackageInfo(Ljava/lang/String;I)')!=1:
-        raise RuntimeError('minimal helper must perform exactly one package lookup')
+    if h.count('getPackageInfo(Ljava/lang/String;I)')!=1: raise RuntimeError('minimal helper must perform exactly one package lookup')
 
     fx=[]
     for base in (root/'smali',root/'res',root/'assets'):
