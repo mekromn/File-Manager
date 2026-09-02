@@ -2,6 +2,18 @@
 from pathlib import Path
 import argparse
 
+VISIBLE_REPLACEMENTS={
+    'FX Connect Connection':'DW Connect Connection',
+    'FX Connect permissions error.':'DW Connect permissions error.',
+    'FX Connect socket timeout, retrying (':'DW Connect socket timeout, retrying (',
+    'FX Connect: ':'DW Connect: ',
+    'FX Connect':'DW Connect',
+    'FX File Explorer':'DW File Manager',
+    'FX Image Viewer':'DW Image Viewer',
+    'FX Media Player':'DW Media Player',
+    'FX Root Installer':'DW Root Installer',
+}
+
 
 def main():
     ap=argparse.ArgumentParser(); ap.add_argument('decoded',type=Path); a=ap.parse_args(); root=a.decoded
@@ -17,31 +29,40 @@ def main():
         'value="@drawable/i144_dw"',
         'value="@drawable/i288_dw"',
     )
-    changed=0
+    changed_icons=0
     for old in tokens:
         c=t.count(old)
         if c!=1: raise RuntimeError(f'expected exactly one exact XML token {old}, got {c}')
-        t=t.replace(old,'value="@mipmap/ic_launcher_app"',1); changed+=1
+        t=t.replace(old,'value="@mipmap/ic_launcher_app"',1); changed_icons+=1
     iconset.write_text(t)
 
-    # One executable legacy display/log label escaped the earlier XML-only brand pass.
-    p=root/'smali/dw/filemanager/ext/share/connect/ConnectConnection.smali'
-    st=p.read_text()
-    if st.count('const-string v0, "FX Connect"')!=1:
-        raise RuntimeError('FX Connect literal shape changed')
-    p.write_text(st.replace('const-string v0, "FX Connect"','const-string v0, "DW Connect"',1))
+    # Replace user-facing FX wording anywhere in executable/resource text, regardless of
+    # which R8/neutral namespace owns the literal.
+    changed_text=0
+    for base in (root/'smali',root/'res',root/'assets'):
+        if not base.exists(): continue
+        for p in base.rglob('*'):
+            if not p.is_file(): continue
+            try: txt=p.read_text()
+            except Exception: continue
+            oldtxt=txt
+            for old,new in VISIBLE_REPLACEMENTS.items():
+                txt=txt.replace(old,new)
+            if txt!=oldtxt:
+                changed_text+=sum(oldtxt.count(old) for old in VISIBLE_REPLACEMENTS)
+                p.write_text(txt)
 
-    # User-visible legacy FX text must be gone. Internal icon-theme ids such as
-    # fx_dynamic remain compatibility identifiers only and are not rendered text.
     visible=[]
-    for base in (root/'res',root/'smali/dw'):
-        for q in base.rglob('*'):
-            if not q.is_file() or q.suffix not in {'.xml','.smali'}: continue
-            txt=q.read_text(errors='ignore')
-            for needle in ('FX Connect','FX File Explorer','FX Image Viewer','FX Media Player','FX Root Installer'):
-                if needle in txt: visible.append((str(q.relative_to(root)),needle))
-    if visible: raise RuntimeError('visible legacy FX branding remains: '+str(visible[:20]))
+    for base in (root/'smali',root/'res',root/'assets'):
+        if not base.exists(): continue
+        for p in base.rglob('*'):
+            if not p.is_file(): continue
+            try: txt=p.read_text(errors='ignore')
+            except Exception: continue
+            for needle in VISIBLE_REPLACEMENTS:
+                if needle in txt: visible.append((str(p.relative_to(root)),needle))
+    if visible: raise RuntimeError('visible legacy FX branding remains: '+str(visible[:30]))
 
-    print(f'stage11a branding repair complete: {changed} legacy home/root artwork links replaced; FX Connect -> DW Connect')
+    print(f'stage11a branding repair complete: {changed_icons} legacy home/root artwork links replaced; {changed_text} visible FX text occurrence(s) migrated to DW')
 
 if __name__=='__main__': main()
