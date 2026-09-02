@@ -1,0 +1,65 @@
+name: Generate DW icon assets
+
+on:
+  push:
+    paths:
+      - '.github/workflows/generate-dw-icon-assets.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Pillow
+        run: python -m pip install --disable-pip-version-check pillow
+      - name: Generate deterministic DW icon assets
+        shell: bash
+        run: |
+          cat > /tmp/make_icons.py <<'PY'
+          from PIL import Image, ImageDraw, ImageFont
+          from pathlib import Path
+          BLUE=(66,133,244,255); BLUE2=(25,103,210,255); DARK=(10,14,19,255)
+          PANEL=(29,37,47,255); EDGE=(55,67,80,255); WHITE=(250,251,252,255)
+          FONT='/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'
+          def text_center(draw,xy,text,size,fill=WHITE):
+              f=ImageFont.truetype(FONT,size); b=draw.textbbox((0,0),text,font=f); w,h=b[2]-b[0],b[3]-b[1]; x,y=xy
+              draw.text((x-w/2,y-h/2-b[1]),text,font=f,fill=fill)
+          def folder_icon(size,variant='base',adaptive=False):
+              im=Image.new('RGBA',(size,size),(0,0,0,0)); d=ImageDraw.Draw(im)
+              if adaptive: x0,y0,x1,y1=[int(size*v) for v in (.16,.24,.84,.78)]
+              else:
+                  pad=int(size*.06); d.rounded_rectangle((pad,pad,size-pad,size-pad),radius=int(size*.13),fill=DARK,outline=(30,39,49,255),width=max(1,size//96))
+                  x0,y0,x1,y1=[int(size*v) for v in (.14,.25,.86,.78)]
+              rad=max(4,int(size*.07)); d.rounded_rectangle((x0,y0,x1,y1),radius=rad,fill=PANEL,outline=EDGE,width=max(1,size//72))
+              tab_h=int(size*.13)
+              d.polygon([(x0+int(size*.08),y0),(x0+int(size*.31),y0),(x0+int(size*.38),y0+tab_h),(x0,y0+tab_h)],fill=(45,58,70,255))
+              d.polygon([(x0+int(size*.25),y0),(x1-rad,y0),(x1,y0+rad),(x1,y0+tab_h),(x0+int(size*.31),y0+tab_h)],fill=BLUE)
+              d.polygon([(x0+int(size*.52),y0),(x1-rad,y0),(x1,y0+rad),(x1,y0+tab_h),(x0+int(size*.60),y0+tab_h)],fill=BLUE2)
+              d.line((x0+int(size*.04),y0+tab_h,x1-int(size*.04),y0+tab_h),fill=(75,92,108,190),width=max(1,size//120))
+              text_center(d,((x0+x1)//2,int(size*.56)),'DW',int(size*.28),WHITE)
+              if variant=='root':
+                  r=int(size*.10); cx=int(size*.76); cy=int(size*.72); d.ellipse((cx-r,cy-r,cx+r,cy+r),fill=BLUE,outline=WHITE,width=max(1,size//96)); text_center(d,(cx,cy),'#',int(size*.13),WHITE)
+              elif variant=='text':
+                  w=int(size*.23); h=int(size*.25); rx=int(size*.71); ry=int(size*.69); d.rounded_rectangle((rx-w//2,ry-h//2,rx+w//2,ry+h//2),radius=max(2,size//50),fill=(238,242,247,255),outline=BLUE,width=max(1,size//96))
+                  for off in (-.055,0,.055):
+                      yy=int(ry+size*off); d.line((rx-w//3,yy,rx+w//3,yy),fill=BLUE,width=max(1,size//72))
+              return im
+          out=Path('assets/dw-icons'); out.mkdir(parents=True,exist_ok=True)
+          for s in (144,288):
+              folder_icon(s).save(out/f'i{s}_dw.png'); folder_icon(s,'root').save(out/f'i{s}_dw_root.png'); folder_icon(s,'text').save(out/f'id{s}_dw_textedit.png')
+          folder_icon(192).save(out/'ic_splash_dw.png'); folder_icon(192).save(out/'ic_launcher_app_192.png'); folder_icon(144).save(out/'ic_launcher_app_144.png')
+          Image.new('RGBA',(432,432),DARK).save(out/'ic_launcher_app_bg.png'); folder_icon(432,adaptive=True).save(out/'ic_launcher_app_fg.png')
+          PY
+          python /tmp/make_icons.py
+      - name: Commit generated icons
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add assets/dw-icons
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'Add generated DW icon assets'
+          git push
