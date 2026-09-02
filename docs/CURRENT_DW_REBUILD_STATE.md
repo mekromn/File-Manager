@@ -2,85 +2,97 @@
 
 Updated: 2026-09-01
 
-This is the durable handoff for the structural DW File Manager rebuild. A transient decoded tree is never treated as authoritative unless its transformation exists as a checked-in stage and its rebuild/audit is recorded under `docs/checkpoints/`.
+This is the durable handoff for the structural DW File Manager rebuild. A transient decoded tree is never authoritative unless the transformation is checked into `tools/stages/` and its rebuild/audit is recorded under `docs/checkpoints/`.
 
 ## Immutable inputs
 
 Accepted rebuild base:
 
 - FX 9.1.0.8 / versionCode 9108
-- SHA-256: `19af15780d0fc65242ed3f97d6397adfbb0055225cef84ccbc2c777b906bf2c6`
-- decoded smali class files: 12,079
+- SHA-256 `19af15780d0fc65242ed3f97d6397adfbb0055225cef84ccbc2c777b906bf2c6`
+- decoded classes: 12,079
 
-Known-working behavioral/reference APK supplied by the user:
+Known-working reference supplied by the user:
 
 - FX Extended 9108006
-- SHA-256: `0f160cf7bf43982303ccf752db1b2c3bfd8607edb70961b2df9a7ec04dfa175c`
-- reference only; never use it as a patch/build base
+- SHA-256 `0f160cf7bf43982303ccf752db1b2c3bfd8607edb70961b2df9a7ec04dfa175c`
+- reference only; never a patch/build base
 
-The reference is used only for known-working signing/package/theme/Android-inset behavior. Its retired commerce/status/state implementation must not be inherited.
-
-## Pinned rebuild toolchains
+Pinned tools:
 
 - Apktool 3.0.3
-- Apktool artifact ZIP SHA-256: `145c372cc2c9cfd3a63d8addf043b08a78aa78071ce2b467b0c3e63cadd3379d`
 - smali/baksmali 3.0.10
-- smali/baksmali artifact ZIP SHA-256: `6de1696514ca9c22a60a0818edfea7584232c35fa896c40c82b0aa065d09db11`
 
-Use `tools/bootstrap_dw_rebuild.py` to verify/decode immutable inputs and `tools/audit_dw_checkpoint.py` for fast stage guards. Final acceptance remains defined by `docs/CORE_REWORK_REQUIREMENTS.md`.
+The previous FX Extended signing-key bundle is available privately outside GitHub. Never commit it.
 
-## Private signing identity
-
-The prior FX Extended signing-key bundle was recovered from the user's file library. The key is never committed to GitHub or included in documentation/artifacts. Final DW builds should reuse that signing identity so signing does not become another installation variable.
-
-## Final identity target
+## Final target/invariants
 
 - label: **DW File Manager**
 - application ID: `com.mekromn.dwfilemanager`
-- app-owned namespace: neutral `dw.filemanager.*`
-- useful former extended modules: neutral namespace such as `dw.filemanager.ext.*`, never a legacy `plus` namespace
-- compatibility target SDK: 34, preserving the known-working legacy inset/navigation behavior observed in the 9108006 reference
+- app-owned implementation namespace: `dw.filemanager.*`
+- useful former extended modules: neutral namespace such as `dw.filemanager.ext.*`; no legacy `plus` namespace/classes/resources
+- compatibility target SDK: 34, retaining the known-working legacy inset/navigation behavior from the 9108006 reference
+- Dark Glass + AMOLED Black Transparent themes with exact Pixel blue `#4285F4`
+- opaque top app header
+- drawer body surface/transparency matched to popup-menu surface
+- new DW adaptive icon and no vendor iconography
+- no app-owned commerce/trial/status/product acquisition subsystem
+- no analytics/telemetry/background transport/promo/update network path
+- user-initiated SMB/SFTP/FTP/WebDAV/cloud/Web Access networking preserved
+- app-owned EULA/terms acceptance/vendor promo/legal flow removed; legally-required third-party notices retained locally
 
-The external companion identifier `nextapp.fx.rk` is compatibility data only and may survive only in the single companion helper and technically required package-visibility declaration.
+### Companion invariant
+
+The only compatibility gate is one pure boolean helper:
+
+1. look up external package `nextapp.fx.rk`;
+2. missing -> false;
+3. verify its signer against the expected signer;
+4. return boolean.
+
+No cache, state object, timestamps, countdown, product/SKU data, version/installer test, broadcast listener, refresh operation, UI, network request or persistence is allowed around this helper.
+
+The external package identifier is compatibility data only. It may survive only in the helper and technically required Android package-visibility declaration.
 
 ## Durable verified stages
 
-### Stage 01 — identity/theme checkpoint
+### Stage 01 — identity/theme
 
 Files:
 
 - `tools/stages/stage01_identity_theme.py`
 - `docs/checkpoints/STAGE01_IDENTITY_THEME.md`
 
-Verified result:
+Verified:
 
-- DW package/label established;
+- manifest package/label moved to DW identity;
 - old sharedUserId removed;
-- collision-sensitive authorities/permission changed;
-- target SDK 34 compatibility metadata set;
-- developer store-disable checkbox removed from XML;
-- native Dark Glass + AMOLED Black Transparent theme definitions added;
-- Pixel blue `#4285F4` wired into active/selection/trim/progress channels;
-- top theme action-bar surfaces made opaque;
-- unsigned APK SHA-256: `a1ac8f21d5778f34c8da84a086bd670523664dace788fe0c058cf0e8001f701f`.
+- collision-sensitive authorities/permission moved to DW package;
+- target SDK metadata set to 34;
+- legacy developer store checkbox removed from XML;
+- Dark Glass + AMOLED theme resources registered;
+- Pixel blue wired into active/selection/trim/progress channels;
+- top theme action-bar surfaces opaque.
 
-### Stage 02 — single companion boolean / state consumer migration
+Unsigned SHA-256: `a1ac8f21d5778f34c8da84a086bd670523664dace788fe0c058cf0e8001f701f`.
+
+### Stage 02 — single companion boolean
 
 Files:
 
 - `tools/stages/stage02_companion_state.py`
 - `docs/checkpoints/STAGE02_COMPANION_STATE.md`
 
-Verified result:
+Verified:
 
-- one pure `dw.filemanager.core.Companion.present(Context)` helper performs only external package lookup + SHA-256 signer comparison + boolean return;
-- no cache/state/version/installer/account/timestamp/product/callback/UI/network/persistence in the helper;
-- normal capability consumers call the boolean directly;
-- old complex verifier and cached state/provider fields removed;
-- unsigned APK SHA-256: `9045477eaf34d546eb7d2154355e55c8b124862582f871a5044a8ff38376063e`;
-- rebuilt DEX independently disassembled with pinned baksmali.
+- one pure companion-present + signer-check helper;
+- normal capability consumers moved to direct boolean use;
+- old complex verifier/cached provider state removed;
+- no helper cache/version/installer/account/time/product/callback/UI/network/persistence.
 
-### Stage 03 — trial/time-window/status structural removal
+Unsigned SHA-256: `9045477eaf34d546eb7d2154355e55c8b124862582f871a5044a8ff38376063e`.
+
+### Stage 03 — trial/time-window/status removal
 
 Files:
 
@@ -90,76 +102,109 @@ Files:
 - `tools/stages/stage03d_prune_trial_resources.py`
 - `docs/checkpoints/STAGE03_TRIAL_STATUS_REMOVAL.md`
 
-Verified result:
+Verified:
 
-- old About trial/product/status construction replaced with small native DW About surface;
-- trial tutorial/check/start paths removed;
-- temporary integer capability adapter deleted;
-- Update/Refresh activity, home item, dedicated status classes and isolated R8 callback arms physically deleted;
-- cached expiration field and time-window methods physically deleted;
-- `trialPlusExpiration` and `trialexp` persistence/import/export paths physically deleted;
-- temporary-state registry flag deleted;
-- expired-trial constructor deleted from R8-shared `be/w` while preserving its unrelated generic-dialog uses;
-- retired upgrade/tutorial extension page and marker deleted;
-- 19 trial/status/upgrade-tutorial resource strings and public declarations removed;
-- final Stage 03 unsigned APK SHA-256: `337692fd5b477f3bdbfa82d4a75a0162d6a126aa38ce59a39b7ee5d06f3f7832`;
-- final Stage 03 `classes.dex` SHA-256: `4541f77f102632817191336de75d4881eaaca965516570930ba5c059b6fc74d2`;
-- rebuilt class files: 12,065 (15 fewer than Stage 02);
-- rebuilt DEX has zero references to the removed time-window/status classes/methods/tokens;
-- app resources contain no trial occurrence after Stage 03.
+- native DW About surface replaces old trial/product/status construction;
+- tutorial trial/start path removed;
+- temporary integer capability adapter removed;
+- Update/Refresh activity/home item/status classes and their isolated R8 callback arms deleted;
+- expiration/time-window state, methods, persistence/import/export removed;
+- expired-trial constructor removed from shared dialog class without removing unrelated uses;
+- retired upgrade tutorial page/marker/resources removed;
+- app resources contain no trial occurrence.
 
-## Structural invariants still required
+Unsigned SHA-256: `337692fd5b477f3bdbfa82d4a75a0162d6a126aa38ce59a39b7ee5d06f3f7832`.
+Rebuilt classes: 12,065.
 
-The rebuild must still physically remove rather than deactivate/rename:
+### Stage 04 — commerce/product/acquisition removal
 
-- app-owned store/IAB/BillingClient integration;
-- SKU/product/catalog metadata used only by commerce;
-- purchase/upgrade acquisition UI/resources/callbacks/broadcasts;
-- telemetry/DataTransport paths with no user-initiated file-manager purpose;
-- unsolicited update/promo/background network paths;
-- app-owned EULA/terms acceptance flow and vendor promotional/legal surfaces.
+Files:
 
-Third-party notices that legally require redistribution remain as compact local OSS notices.
+- `tools/stages/stage04a_sever_commerce_roots.py`
+- `tools/stages/stage04b_remove_iab_core.py`
+- `tools/stages/stage04c_remove_acquisition_billing_api.py`
+- `tools/stages/stage04d_remove_web_upgrade.py`
+- `tools/stages/stage04e_remove_product_graph.py`
+- `tools/stages/stage04f_strip_shared_billing_helpers.py`
+- `tools/stages/stage04g_prune_commerce_resources.py`
+- `tools/stages/stage04h_remove_app_commerce_residue.py`
+- `tools/stages/stage04i_remove_faq_commerce.py`
+- `docs/checkpoints/STAGE04_COMMERCE_REMOVAL.md`
 
-## Companion invariant
+Verified:
 
-Final helper behavior remains exactly:
+- app-owned IAB package physically deleted;
+- public BillingClient API/proxy activities removed;
+- acquisition dialog/actions/callbacks/broadcasts removed;
+- dedicated product/SKU/detail graph removed;
+- Web Access upgrade tab/module/remote upgrade loader removed from standalone and bundled JS;
+- user-facing commerce resources removed/neutralized across locales;
+- commerce FAQ text removed;
+- outside the shaded generated runtime, rebuilt DEX has no commerce path.
 
-1. look up external `nextapp.fx.rk`;
-2. missing -> false;
-3. hash/check signer against expected signer;
-4. return boolean.
+Final Stage 04 unsigned SHA-256: `5e2f8955b82821f6d2945c4e4c5b60a33367bfab991a4452b9a33a4a52fbca4f`.
+Rebuilt classes: 12,005.
 
-No cache, state object, timestamps, countdown, SKU/product data, version test, installer test, broadcast listener, refresh operation, UI, network request or persistence is permitted around this compatibility gate.
+### Stage 05 — telemetry/DataTransport structural removal
 
-## Important R8/native boundaries
+Files:
 
-- normal Media/Network/Web Access behavior is mixed with legacy-named extended-module code; migrate useful code, do not delete it;
-- commerce/telemetry code is R8-mixed with unrelated utility/UI/media code in several obfuscated classes, so whole-package deletion is unsafe;
-- DataTransport removal must sever mixed-class logging/scheduler/backend roots before deleting dedicated transport classes by reachability;
-- four `libnative-file-access.so` ABI libraries contain JNI names tied to `nextapp.xf.shell.NativeFileAccess`; Java namespace migration must patch all four native bridges consistently.
+- `tools/stages/stage05a_sever_logging_transport.py`
+- `tools/stages/stage05b_prune_unreachable_shaded.py`
+- `tools/stages/stage05c_remove_transport_runtime.py`
+- `tools/stages/stage05d_remove_transport_backend.py`
+- `tools/stages/stage05e_strip_eventstore_bridges.py`
+- `tools/stages/stage05f_strip_last_transport_mixed.py`
+- `tools/stages/stage05g_prune_datatransport_graph.py`
+- `docs/checkpoints/STAGE05_DATATRANSPORT_REMOVAL.md`
 
-## Theme/UI requirements still pending
+Verified:
 
-The native theme resources are present, but final UI work still includes:
+- BillingLogger-to-transport send root physically removed;
+- first reachability pass deleted 56 shaded classes with no surviving root;
+- DataTransport discovery/scheduler Android components removed from manifest;
+- scheduler/runtime/backend/event-store/CCT provider branches removed method-by-method from R8-shared classes;
+- 45-class dedicated transport graph proven to have zero external roots and physically deleted;
+- rebuilt DEX has no DataTransport namespace classes or CCT/event-store/database markers;
+- old IAB and public BillingClient refs remain zero.
 
-- drawer **body** surface/transparency must match popup-menu surface (not only drawer header);
-- final adaptive DW icon replacement;
-- remove all upstream/vendor iconography/branding;
-- final neutral namespace migration for useful extended modules.
+Final Stage 05 unsigned APK:
 
-## Next concrete stage — Stage 04
+- size: 12,943,018 bytes
+- SHA-256: `0ebd351fa60422c3e1ea7a670754ea8c12e8ef49c92b59d8034c5f34b1481086`
+- rebuilt classes: 11,895
+- ZIP integrity: clean
 
-Re-derive the call graph from the verified Stage 03 tree, then structurally remove the app-owned store/IAB/BillingClient graph:
+### Important shaded-runtime boundary after Stage 05
 
-1. inventory `nextapp.fx.iab` and public BillingClient-facing classes/methods from the Stage 03 tree;
-2. delete dedicated commerce classes whose surviving incoming-reference count is zero after roots are cut;
-3. remove only commerce-specific methods/switch arms from R8-shared classes;
-4. remove acquisition/product/purchase resources only after their resource IDs have zero live callers;
-5. rebuild with pinned Apktool;
-6. independently baksmali-disassemble rebuilt DEX and verify zero dangling deleted-type references;
-7. commit Stage 04 script/checkpoint before beginning DataTransport pruning.
+`com.google.android.gms.internal.play_billing` now contains 111 classes.
 
-After Stage 04: DataTransport/Google-runtime network audit and removal, neutral DW/JNI namespace migration, EULA/vendor/help cleanup, icon/drawer UI fixes, orphan pruning, signing, full structural/network audit, then device startup/settings/file/network regression testing.
+Fresh reachability result:
 
-No APK should be presented to the user as complete until the final file exists, is signed/verified, and passes the acceptance checklist.
+- total: 111
+- external roots: 13
+- reachable: 111
+- unreachable: 0
+
+These survivors include R8-shared generic callback/progress/stream/collection/backport helpers used by normal file-manager code. Do not delete them by package name. Their legacy package name is nevertheless unacceptable final DW naming and must be migrated to a neutral runtime namespace in Stage 06.
+
+## Important native boundary
+
+Four ABI copies of `libnative-file-access.so` contain JNI symbols tied to `nextapp.xf.shell.NativeFileAccess`. Java namespace migration must patch all four native libraries consistently with the migrated bridge name. Do not rename only the smali class.
+
+## Current next stage — Stage 06: neutral namespace/JNI migration
+
+Start from the verified Stage 05 tree.
+
+1. Inventory every surviving app-owned `nextapp.*` descriptor, manifest component/action/provider/authority string, reflection/serialized class-name string and resource/module identifier.
+2. Migrate ordinary app-owned `nextapp.fx.*` implementation to `dw.filemanager.*` through real smali/path changes.
+3. Migrate useful former `nextapp.fx.plus.*` Media/Network/Web Access implementation to `dw.filemanager.ext.*` and rename live `Plus*` class identifiers/resources to neutral `Ext*` names.
+4. Preserve external `nextapp.fx.rk` only in `Companion.present()` and the package-visibility query.
+5. Migrate `nextapp.xf.shell.NativeFileAccess` to a neutral bridge and patch the JNI exported-symbol strings in all four `libnative-file-access.so` ABI libraries consistently.
+6. Migrate the 111 reachable shaded generated classes from `com.google.android.gms.internal.play_billing` to a neutral DW runtime namespace without deleting their generic behavior.
+7. Rebuild with Apktool; independently disassemble rebuilt DEX; verify no dangling old descriptors and no vendor/legacy `plus` implementation namespace remains except the external companion compatibility datum.
+8. Checkpoint Stage 06 to GitHub before EULA/vendor/help/Google-common-network cleanup.
+
+After Stage 06: EULA/vendor branding/help and Google common/Drive OAuth reachability audit, drawer/body UI + DW icon, resource/orphan pruning, signing, full structural/network audit, then device startup/settings/local/root/Media/network/cloud/Web Access regression testing.
+
+No APK is complete until the final file exists, is signed/verified, and passes the acceptance checklist.
