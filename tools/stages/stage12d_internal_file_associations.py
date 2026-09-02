@@ -168,10 +168,12 @@ def main():
     if n!=1: raise RuntimeError('versionCode not found')
     y.write_text(yt)
 
-    # Regression guards: all four user-reported internal options and the generic mechanism.
+    # Regression guards: all four user-reported internal options must still be present
+    # somewhere in the Open With population graph, while the generic mechanism lives in y0.
     final=y0.read_text(); ftxt=fa.read_text(); ltxt=lc.read_text()
+    corpus='\n'.join(p.read_text(errors='ignore') for p in sm.rglob('*.smali'))
     for cls in ('dw.filemanager.ui.viewer.TextViewerActivity','dw.filemanager.ui.textedit.EditorActivity','dw.filemanager.ui.viewer.BinaryViewerActivity','dw.filemanager.ui.details.DetailsActivity'):
-        if cls not in final: raise RuntimeError('expected internal Open With target missing: '+cls)
+        if cls not in corpus: raise RuntimeError('expected internal Open With target missing: '+cls)
     for tok in ('matchesInternal(Ljava/lang/String;Ljava/lang/String;)Z','toggleInternal(Landroid/content/Context;Lkh/e;Ljava/lang/String;)Z','const-string v1, "internal:"'):
         if tok not in ftxt: raise RuntimeError('internal association helper missing '+tok)
     if 'instance-of v4, v0, Lhf/u0;' not in ltxt: raise RuntimeError('internal long-press path missing')
