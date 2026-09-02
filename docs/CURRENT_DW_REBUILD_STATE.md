@@ -12,7 +12,7 @@ This file is the durable handoff for the DW File Manager structural rebuild. The
 - smali/baksmali 3.0.10
 - recovered signing identity remains private outside GitHub
 
-Use `.github/workflows/export-rebuild-state.yml` to export the checked-in rebuild state as a GitHub Actions artifact after interruptions.
+Use `.github/workflows/export-rebuild-state.yml` to export the checked-in rebuild state after interruptions. Use `.github/workflows/replay-dw-rebuild.yml` for a full exact-hash replay from the immutable base.
 
 ## Final target/invariants
 
@@ -24,6 +24,7 @@ Use `.github/workflows/export-rebuild-state.yml` to export the checked-in rebuil
 - Dark Glass + AMOLED Black Transparent with exact Pixel blue `#4285F4`
 - opaque top header and drawer body matching popup-menu surface
 - new DW adaptive icon; no upstream vendor artwork/visible branding
+- DW configuration extension `.dwconfig`; legacy `.fxconfig` is not retained
 - no app-owned commerce/trial/status/product acquisition subsystem
 - no telemetry/DataTransport/background promo/update path
 - app-owned EULA/terms acceptance removed; third-party notices retained
@@ -81,57 +82,57 @@ BillingLogger transport root, unreachable shaded code, scheduler/backend/event-s
 
 - app-owned first-run EULA/license gate and obsolete privacy settings surface removed;
 - vendor support/help/Web Access branding and links removed from packaged assets;
-- four unreachable GMS/lifecycle/Dynamite remnants deleted while the 9-class Drive-auth GMS path is retained;
+- four unreachable GMS/lifecycle/Dynamite remnants deleted while the Drive-auth GMS path is retained;
 - SoundManager2/Flash fallback replaced with a 1,181-byte HTML5 Audio-only compatibility shim;
 - startup/background component audit shows no telemetry/update/promo network path.
 
 ### Stage 08 — UI branding, drawer surface, DW artwork
+`stage08a`–`stage08b` / `STAGE08_UI_BRANDING.md`
 
-Files:
+- drawer body resolves `menuBackground` with `windowBackground` only as fallback;
+- Android UI/resources/locales contain zero uppercase FX/NextApp branding hits at this checkpoint;
+- FX-branded resource IDs/files migrated to DW identifiers at the same public numeric IDs;
+- old artwork replaced by DW adaptive/legacy/splash/root/TextEdit artwork with Pixel blue `#4285F4`;
+- Stage 08 historically retained `.fxconfig`; Stage 09d intentionally supersedes that compatibility decision.
 
-- `tools/stages/stage08a_drawer_menu_surface.py`
-- `tools/stages/stage08b_rebrand_android_icon.py`
-- `assets/dw-icons/*`
-- `.github/workflows/generate-dw-icon-assets.yml`
-- `docs/checkpoints/STAGE08_UI_BRANDING.md`
+Stage 08 unsigned reference: 11,890 classes, 12,891,720 bytes, SHA-256 `185a69ec5828a0809aeea24a57f09e9673918d64ec1ed76d69f0a433860bc4ae`.
 
-Verified:
+### Stage 09 — lean finalization / Box neutralization / `.dwconfig`
+`stage09a`–`stage09d` / `STAGE09_FINALIZATION.md`
 
-- actual drawer-body `bg/f` no longer uses `windowBackground`; it calls `ef/g.dwMenuBackground()` which resolves `menuBackground` with `windowBackground` fallback;
-- Android UI/resources/locales contain zero uppercase `FX` / `NextApp` branding hits;
-- FX-branded resource IDs and files migrated to DW identifiers at the same public numeric IDs;
-- old FX artwork physically replaced by dark DW folder/monogram artwork with Pixel blue `#4285F4`;
-- adaptive foreground/background, legacy launcher icons, splash, root and TextEdit variants are generated and committed;
-- `.fxconfig` is deliberately retained as a configuration-file compatibility extension, not branding;
-- rebuilt classes: `11,890`;
-- final Stage 08 unsigned APK size: `12,891,720` bytes;
-- final Stage 08 unsigned SHA-256: `185a69ec5828a0809aeea24a57f09e9673918d64ec1ed76d69f0a433860bc4ae`;
-- `classes.dex` SHA-256: `68b0397a0e177247da8b0853d59b575ae63343d89d3706b1523324f1841d4ba4`.
+- 12 graph-proven orphan resources removed;
+- hard-coded `https://android.nextapp.com/_boxredirect` removed from Box OAuth; callback acceptance uses matching OAuth `state` plus non-null `code`;
+- remaining app-owned commerce/trial/state residue and stale terms removed;
+- `.fxconfig` migrated to `.dwconfig` everywhere app-owned.
 
-## Explicit unresolved Box OAuth blocker
+Exact-hash GitHub Actions replay run `33591589290` passed from the immutable 9.1.0.8 APK through every checked-in stage 01→09d. Stage 09d found and replaced exactly four `fxconfig` content occurrences:
 
-Two executable references to `https://android.nextapp.com/_boxredirect` remain solely in Box OAuth. The upstream Box OAuth client is server-registered against that callback, so blindly changing it would break Box authentication.
+- 2 in `res/values/strings.xml`;
+- 1 in `smali/rf/a.smali`;
+- 1 in `smali/ab/k.smali`;
+- 0 path renames were required.
 
-Final resolution must be one of:
+Verified Stage 09d unsigned replay:
 
-- a DW-controlled/configurable Box OAuth client + neutral callback;
-- a proven compatible redirect-omission/generic callback path validated by a real Box login;
-- remove Box support if absolute zero vendor references takes priority.
+- rebuilt classes: `11,889`
+- APK size: `12,829,902` bytes
+- APK SHA-256: `ce1dff557cf399e722caa3a1abc15a9045ed895b7b52ce5a6edad113e2c46e76`
+- ZIP integrity: clean
+- canonical base SHA verification: passed
+- full stage replay: passed
 
-Do not hide/encode the old URI and call it removed.
+PR #1 (`Stage 09d: migrate .fxconfig to .dwconfig`) was squash-merged to `main` as commit `da7b92404e6f98a9ac03b786ee9219e122f66c01`.
 
-## Current next stage — Stage 09: lean finalization + Box decision + signing readiness
+## Remaining release gates
 
-Start from verified Stage 08.
+1. Re-audit every surviving HTTP/HTTPS endpoint against explicit user-facing file-manager features.
+2. Set/freeze final versionCode/versionName and verify package/manifest/provider/action identity.
+3. Sign with the recovered private DW/FX-Extended signing identity.
+4. Verify v1/v2 signatures, ZIP alignment, DEX/resources/ZIP integrity, and signer fingerprint.
+5. Generate final before/after class/resource/network/banned-term report.
+6. Produce an actually existing downloadable **signed** APK only after static acceptance checks pass.
+7. Device regression test: startup, Settings, themes/drawer, `.dwconfig` export/import, local browsing, root, Media, SMB/SFTP/FTP/WebDAV, cloud providers including real Box login, and Web Access.
 
-1. Run safe orphan/dead resource and class pruning after all removed subsystems/branding.
-2. Re-audit every surviving HTTP/HTTPS endpoint and classify it by explicit user-facing network feature.
-3. Resolve or explicitly gate the Box OAuth blocker without silently breaking cloud behavior.
-4. Set final version code/name and verify package/manifest/provider/action identity.
-5. Sign with the recovered private DW/FX-Extended signing identity.
-6. Verify v1/v2 signatures, DEX/resource/ZIP integrity and alignment.
-7. Generate final before/after class/resource/network report and banned-term audit.
-8. Produce an actually existing downloadable APK only after all static acceptance checks pass.
-9. Device regression test: startup, Settings, local browsing, root, Media, SMB/SFTP/FTP/WebDAV, cloud providers and Web Access.
+The Box vendor redirect literal is statically removed, but Box server compatibility is not claimed until a real device login succeeds.
 
-No APK is complete until the final file exists, is signed/verified, and passes the acceptance checklist.
+No APK is final until the signed file exists and the release/device gates pass.
