@@ -1,0 +1,73 @@
+name: Diagnose Stage16 home sections
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [stage16-custom-home-sections]
+    paths:
+      - '.github/workflows/diagnose-stage16-home-sections.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Decode v9109005 baseline and inventory Home model
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 4 --retry-all-errors -o fx.apk 'https://d.apkpure.net/b/APK/nextapp.fx?version=latest'
+          echo '19af15780d0fc65242ed3f97d6397adfbb0055225cef84ccbc2c777b906bf2c6  fx.apk' | sha256sum -c -
+          curl -fL --retry 4 --retry-all-errors -o apktool.jar 'https://github.com/iBotPeaches/Apktool/releases/download/v3.0.3/apktool_3.0.3.jar'
+          echo 'dbf930b076c6b9be08d57c449cacefc3bdd6b71ebd59b3066fc0e1f5b14f9423  apktool.jar' | sha256sum -c -
+          java -jar apktool.jar d -f fx.apk -o decoded
+          while IFS= read -r stage; do python3 "$stage" decoded; done < <(find tools/stages -maxdepth 1 -type f -name 'stage*.py' -print | LC_ALL=C sort)
+          mkdir -p diag/full
+          python3 - <<'PY'
+          from pathlib import Path
+          import re, shutil
+          root=Path('decoded'); sm=root/'smali'
+          needles=['HomeSection','HomeItem','ExtHomeSection','ExtHomeItem','bookmark','recent','cleaning','apps','drag','drop','reorder','move','section','home item','home_section','home_order','layout']
+          hits=[]; files=[]
+          for p in sm.rglob('*.smali'):
+              t=p.read_text(errors='ignore')
+              matched=[n for n in needles if n.lower() in t.lower()]
+              if matched:
+                  hits.append(f'===== {p.relative_to(sm)} :: {", ".join(matched)} =====\n'+t)
+                  files.append(p)
+          Path('diag/home-hits.txt').write_text('\n'.join(hits)+'\n')
+          rh=[]
+          for p in (root/'res').rglob('*.xml'):
+              t=p.read_text(errors='ignore')
+              if re.search(r'(?i)home|section|reorder|move|bookmark|recent|cleaning|applications',t):
+                  rh.append(f'===== {p.relative_to(root)} =====\n'+t)
+          Path('diag/home-resources.txt').write_text('\n'.join(rh)+'\n')
+          # Copy likely central Home classes plus immediate references.
+          seed=[]
+          for p in files:
+              t=p.read_text(errors='ignore')
+              if any(x in t for x in ('HomeSection','HomeItem','ExtHomeSection','ExtHomeItem')) or 'home' in p.name.lower():
+                  seed.append(p)
+          refs=set()
+          for p in seed:
+              for cls in re.findall(r'L([A-Za-z0-9_$/]+);',p.read_text(errors='ignore')):
+                  if not cls.startswith(('java/','android/','androidx/','kotlin/')): refs.add(cls)
+          copied=0
+          for p in seed[:120]:
+              shutil.copy2(p,Path('diag/full')/(str(p.relative_to(sm)).replace('/','__'))); copied+=1
+          for cls in list(refs)[:180]:
+              p=sm/(cls+'.smali')
+              if p.exists():
+                  t=p.read_text(errors='ignore')
+                  if any(x in t.lower() for x in ('home','section','reorder','move','sharedpreferences')):
+                      shutil.copy2(p,Path('diag/full')/(cls.replace('/','__')+'.smali')); copied+=1
+          print('hit_files',len(files),'seed',len(seed),'captured',copied)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stage16-home-sections-diagnostic
+          path: diag
+          retention-days: 3
