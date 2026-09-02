@@ -4,146 +4,154 @@ Updated: 2026-09-02
 
 This is the durable handoff for the DW File Manager structural rebuild. The authoritative implementation is the checked-in stage scripts under `tools/stages/` plus verification records under `docs/checkpoints/`. A transient decoded tree is never authoritative by itself.
 
-## Immutable inputs
+## Immutable base
 
-- canonical base: FX 9.1.0.8 / versionCode 9108 / SHA-256 `19af15780d0fc65242ed3f97d6397adfbb0055225cef84ccbc2c777b906bf2c6`
-- known-working reference only: FX Extended 9108006 / SHA-256 `0f160cf7bf43982303ccf752db1b2c3bfd8607edb70961b2df9a7ec04dfa175c`
+- canonical base: FX 9.1.0.8 / versionCode 9108
+- canonical SHA-256: `19af15780d0fc65242ed3f97d6397adfbb0055225cef84ccbc2c777b906bf2c6`
+- known-working historical reference only: FX Extended 9108006 / SHA-256 `0f160cf7bf43982303ccf752db1b2c3bfd8607edb70961b2df9a7ec04dfa175c`
 - Apktool 3.0.3
 - smali/baksmali 3.0.10
-- recovered signing identity remains private outside GitHub
 
-Use `.github/workflows/replay-dw-rebuild.yml` for immutable-base replay and `.github/workflows/export-rebuild-state.yml` for durable state export.
+Use `.github/workflows/replay-dw-rebuild.yml` for exact immutable-base replay. It now gates both pull requests and changes merged to `main`.
 
-## Final identity/invariants
+## Final identity
 
 - app: **DW File Manager**
 - package: `com.mekromn.dwfilemanager`
 - versionCode: `9109000`
-- upstream versionName retained: `9.1.0.8`
+- versionName: `9.1.0.8`
 - target SDK: 34
 - app-owned namespace: `dw.filemanager.*`
-- useful extended modules: `dw.filemanager.ext.*`
-- neutral R8-shared runtime: `dw.filemanager.runtime.*`
-- Dark Glass + AMOLED Black Transparent; Pixel blue `#4285F4`
-- opaque top header; drawer body uses popup-menu surface
-- DW icon family; no visible upstream FX/NextApp artwork
-- configuration extension: `.dwconfig`; exported filenames use `DW_...`
-- no app-owned trial/status/product/acquisition/IAB/BillingClient/Google Play Services/DataTransport subsystem
-- no telemetry/background promo/update path
-- app-owned EULA/terms acceptance removed; required third-party notices retained
-- user-initiated SMB/SFTP/FTP/WebDAV/cloud/Web Access preserved
+- useful extension namespace: `dw.filemanager.ext.*`
+- neutral shared runtime: `dw.filemanager.runtime.*`
+- configuration extension: `.dwconfig`
+- generated config filename prefix: `DW_`
+- Dark Glass + AMOLED Black Transparent with Pixel blue `#4285F4`
+- DW adaptive/legacy/splash/root/TextEdit artwork
 
-## Companion invariant
+## Final companion invariant — Stage 10
 
-Only `dw.filemanager.core.Companion.present(Context)` evaluates `nextapp.fx.rk`: package lookup -> signer verification -> boolean. The literal exists only in that helper and the required package-visibility query. No cache/state/time/product/version/installer/broadcast/UI/network/persistence surrounds it.
+The old distributed companion/capability system is retired.
 
-## Durable stages
+There is exactly **one app-wide companion decision**:
 
-### 01 — identity/theme
-DW package/label, SDK 34 compatibility, collision-safe authorities, developer store checkbox removal, Dark Glass/AMOLED registration and Pixel-blue active channels.
+1. `DWApplication.onCreate()` calls `dw.filemanager.core.Companion.present(Context)` once.
+2. The helper contains the only `nextapp.fx.rk` literal in the packaged APK.
+3. It performs exactly one `PackageManager.getPackageInfo(packageName, 0)` lookup.
+4. Package found -> `true`.
+5. `NameNotFoundException` -> `false`.
+6. If false, DW exits before normal initialization.
+7. If true, normal DW code runs with no further companion checks.
 
-### 02 — companion boolean
-Single signer-verified companion helper; normal capability consumers migrated off the legacy state provider.
+No signer/hash check, version check, installer check, account, product, trial, timer, cache, persistence, broadcast, UI, network, or installed-app enumeration exists in the companion helper.
 
-### 03 — trial/time-window/status removal
-Update/Refresh/status UI, trial tutorial, time-window state/persistence/import/export and trial/status resources physically removed.
+Stage 10 removed 27 distributed companion checks across 26 files. The final package contains exactly one `nextapp.fx.rk` literal total and exactly one caller of `Companion.present(Context)`.
 
-### 04 — commerce/product/acquisition removal
-App-owned IAB, public BillingClient API/proxies, product/SKU/acquisition graph, Web Access upgrade module and commerce resources/help removed.
+Target-SDK package visibility is provided without duplicating the companion package literal. The manifest contains `android.permission.QUERY_ALL_PACKAGES`; it contains no `nextapp.fx.rk` value.
 
-### 05 — telemetry/DataTransport removal
-BillingLogger transport root, scheduler/backend/event-store/CCT graph and Android DataTransport components removed by method-level cuts and proven reachability.
+## Structural removals completed
 
-### 06 — neutral namespace + JNI
-App-owned implementation -> `dw.filemanager.*`; useful module code -> `dw.filemanager.ext.*`; shared shaded runtime -> `dw.filemanager.runtime.*`; old `play_billing`/live `Plus*` implementation names removed; four ABI JNI exports migrated to `Java_dw_filemanager_NativeFileAccess_*`.
+- trial/time-window/status system: removed
+- Update/Refresh/status UI: removed
+- app-owned IAB/BillingClient/product/SKU/acquisition system: removed
+- Google Play Store integration/surface: removed
+- DataTransport/telemetry upload graph: removed
+- Google Play Services/common-client class/manifest island: removed
+- app-owned EULA/terms acceptance: removed
+- obsolete privacy settings surface: removed
+- vendor support/help/promo branding: removed
+- hard-coded NextApp Box redirect: removed
+- `.fxconfig`: removed / migrated to `.dwconfig`
+- stale Upgrade/license wording: removed while required OSS/protocol license terminology remains
 
-### 07 — legal/vendor/background-network cleanup
-First-run app-owned EULA/legal gate and obsolete privacy surface removed; vendor support/help/Web Access branding removed; SoundManager Flash fallback replaced with HTML5 Audio-only shim; no telemetry/update/promo startup/background network path.
+User-initiated SMB/SFTP/FTP/WebDAV/cloud/Web Access functionality remains intentionally preserved.
 
-### 08 — UI branding/drawer/DW artwork
-Drawer body resolves `menuBackground`; Android UI/resources/locales rebranded; FX-branded resource IDs/files migrated at stable numeric IDs; DW adaptive/legacy/splash/root/TextEdit artwork installed.
+## Network release gate
 
-### 09a–09d — lean finalization / Box / banned residue / `.dwconfig`
-- graph-proven orphan resource pruning;
-- hard-coded NextApp Box redirect removed; callback validates OAuth `state` + `code` generically;
-- remaining app-owned trial/commerce/state residue stripped;
-- `.fxconfig` -> `.dwconfig` migrated everywhere app-owned.
+Stage 10 classifies every packaged HTTP/HTTPS literal:
 
-### 09e — Google Play Services/common-client removal
-`tools/stages/stage09e_remove_google_services.py` physically removes the remaining Google common/client island, GoogleApiActivity/version metadata, orphaned common-GMS UI resources and the separate Google Play Store market enum/integration. Google Drive's AppAuth/browser OAuth implementation remains. Static exact replay passed; real Drive sign-in remains a device test.
+- unique literals: 53
+- explicit runtime/user-feature literals: 35
+- inert XML/library/compiler/data literals: 18
+- unclassified: 0
+- banned NextApp/Firebase/analytics/Crashlytics/DoubleClick/telemetry domains: 0
 
-### 09f — DW config filename prefix
-Stage 09d remains the sole extension migration. Stage 09f changes the generated config filename prefix from `FX_...` to `DW_...` and asserts `.dwconfig` is already canonical.
+Preserved runtime endpoints are tied to deliberate user-facing features such as Google Drive browser OAuth/API, Microsoft/OneDrive Graph, Box, SugarSync, local Web Access, and the user-invoked F-Droid package page.
 
-### 09g — final app-owned terminology cleanup
-`tools/stages/stage09g_final_wording.py` changes the root-settings `_license` SharedPreferences suffix to `_settings`, removes the stale root-help reference to the deleted Upgrade home item, rewords Web Access old-browser guidance, and renames/rewords the app-owned network-database upgrade UI as a format change. Unrelated protocol/framework terms and required OSS license names remain intact.
+## Exact merged-main Stage 10 replay
 
-## Final exact replay gate
+Merged Stage 10 code commit: `ed3c383b829b8c0d6573745934049f9268d6eaee`.
 
-PR #4 / GitHub Actions run `33592839294` replayed every checked-in stage from the immutable 9.1.0.8 base and passed:
+GitHub Actions run `33594036238` replayed that exact `main` commit from the immutable base and passed:
 
-- canonical base SHA verification: pass
-- all stage transformations: pass
+- base SHA verification: pass
+- every transformation stage: pass
+- network allowlist: pass
+- one-companion-literal invariant: pass
+- one-companion-caller invariant: pass
+- one `getPackageInfo(name, 0)` helper lookup invariant: pass
 - Apktool rebuild: pass
 - ZIP integrity: pass
 - artifact upload: pass
-- rebuilt classes: `11,808`
-- unsigned size: `12,641,290` bytes
-- unsigned SHA-256: `d2599e878450e9af5a80a16c291cbb79fcd523aed987e65dd2f3613818e4e2fb`
+- classes: `11,808`
+- unsigned size: `12,641,243` bytes
+- unsigned SHA-256: `b058df28be22237301444a51195e6e93d81ccf8a3ab7fa057e3417775a98e426`
 
-The verification record was squash-merged as commit `efe768211ed57e3373e3b5465103c5a47dea0e63`.
+See `docs/checkpoints/STAGE10_RELEASE_AUDIT.md`.
 
-## Signed Stage 09g device-test candidate
+## Permanent DW File Manager signer
 
-The exact replay artifact was signed outside GitHub with the recovered private signing identity.
+The user accepted a one-time uninstall/reinstall so the historical `FX Extended Test` certificate could be retired.
 
-- signed size: `12,785,738` bytes
-- signed SHA-256: `0ee09f6f299bc0f70114d95dcac4af435b8de7eeb5f45ba2cb19b5a5bee32193`
-- signer certificate SHA-256: `15:1E:70:F8:73:68:3F:66:1B:FD:9A:52:42:4B:E7:3E:C5:54:C4:A4:01:21:C6:4F:FD:42:8E:CA:ED:9D:42:21`
-- JAR/v1 signature verification: pass
-- APK Signature Scheme v2 RSA/SHA-256 signature verification: pass
-- v2 whole-file content digest verification: pass
+Permanent new certificate identity:
+
+- subject/issuer: `CN=DW File Manager, O=DW File Manager, OU=Mekromn`
+- RSA 4096
+- certificate SHA-256: `1C:FD:89:2D:8E:CA:D5:11:45:5E:36:5C:2B:FD:4A:FF:B2:4D:F2:57:60:FF:90:5B:D6:BC:10:CE:AA:3B:5C:6E`
+- validity: through 2054-01-18
+
+The private recovery bundle is deliberately kept outside GitHub and has been saved to the user's Library as `DW-File-Manager_SIGNING_KEY_KEEP_PRIVATE.zip`. This signer is now a hard invariant for all future DW File Manager builds.
+
+## Current signed Stage 10 device-test candidate
+
+`DW-File-Manager_9.1.0.8_v9109000_MINIMAL_COMPANION_FINAL_TEST.apk`
+
+- signed size: `12,787,513` bytes
+- signed SHA-256: `1b0ed70ffbad60b501b9c1d15cd4a461421a18961e5c3ed75b9a7cfcaaadaef3`
+- zipalign verification: pass
+- APK Signature Scheme v1: pass
+- APK Signature Scheme v2: pass
+- APK Signature Scheme v3: pass
+- signer identity/fingerprint: pass
 - ZIP integrity: pass
 
-The v2 verifier was cross-validated against the known-working signed 9108006 reference before signing this candidate.
+Post-sign comparison against the exact verified unsigned merged-main artifact:
 
-## Signed-APK static audit
+- missing non-signature entries: 0
+- extra non-signature entries: 0
+- changed non-signature entries: 0
+- `classes.dex`: byte-identical
+- `AndroidManifest.xml`: byte-identical
+- `resources.arsc`: byte-identical
+- `nextapp.fx.rk`: exactly 1 occurrence, in `classes.dex` only
+- `fxconfig`: 0
+- `dwconfig`: 4
+- GMS descriptor/string hits: 0
 
-Decoding the signed candidate itself produced 11,808 classes and verified:
+## Remaining device validation
 
-- package `com.mekromn.dwfilemanager`: pass
-- app label `DW File Manager`: pass
-- versionCode `9109000`: pass
-- target SDK 34: pass
-- GMS descriptors / manifest entries: zero
-- `play_billing`: zero
-- NextApp network endpoints: zero
-- `fxconfig`: zero
-- `.dwconfig`: present
-- whole-word trial: zero
-- whole-word billing: zero
-- purchase/purchased/purchases: zero
-- IAP: zero
-- paid: zero
-- `state_trial`: zero
-- `time remaining`: zero
-- Google Play wording/integration: zero
-- companion external package: exactly one smali helper occurrence + one manifest query
-- root `_license` preference suffix: zero
-- stale root-help `Upgrade`: zero
+The static/rebuild/signing gates are complete. Runtime testing remains:
 
-## Remaining gates
+1. uninstall the previous FX-Extended-signed build once, then install the new DW-signed APK;
+2. cold start with companion installed;
+3. optional negative test with companion absent -> DW should exit before initialization;
+4. Settings; Dark Glass/AMOLED; drawer/header appearance;
+5. `.dwconfig` export/import and `DW_...` generated filename;
+6. local browsing/copy/move/delete/search and root mode;
+7. Media section;
+8. SMB/SFTP/FTP/WebDAV;
+9. Google Drive browser OAuth, OneDrive, Box and SugarSync;
+10. Web Access including HTML5 audio;
+11. confirm retired Refresh/Upgrade/trial/purchase/legal UI never reappears.
 
-The current APK is a **device-test candidate**, not yet declared final. Remaining runtime validation:
-
-1. install + cold startup on the Pixel 9 Pro XL / Android 16;
-2. Settings opens; Dark Glass/AMOLED themes and drawer/header appearance;
-3. `.dwconfig` export/import and `DW_...` generated filename;
-4. local browsing/copy/move/delete/search and root mode;
-5. Media section;
-6. SMB/SFTP/FTP/WebDAV;
-7. cloud providers, especially Google Drive login after GMS removal and real Box login after neutral callback handling;
-8. Web Access including HTML5 audio playback;
-9. verify no obsolete Refresh/Upgrade/trial/purchase/legal UI reappears.
-
-The signed file exists and is statically verified. Runtime/device acceptance is now the main blocker to calling it final.
+The signed APK is the current device-test candidate. Device results determine whether any runtime fixes are still required.
