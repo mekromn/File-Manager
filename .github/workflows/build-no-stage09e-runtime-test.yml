@@ -1,0 +1,92 @@
+name: Build no-Stage09e runtime isolation test
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [stage11-runtime-repair]
+    paths:
+      - '.github/workflows/build-no-stage09e-runtime-test.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download immutable base and pinned Apktool
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 4 --retry-all-errors -o fx.apk 'https://d.apkpure.net/b/APK/nextapp.fx?version=latest'
+          echo '19af15780d0fc65242ed3f97d6397adfbb0055225cef84ccbc2c777b906bf2c6  fx.apk' | sha256sum -c -
+          curl -fL --retry 4 --retry-all-errors -o apktool.jar 'https://github.com/iBotPeaches/Apktool/releases/download/v3.0.3/apktool_3.0.3.jar'
+          echo 'dbf930b076c6b9be08d57c449cacefc3bdd6b71ebd59b3066fc0e1f5b14f9423  apktool.jar' | sha256sum -c -
+          java -jar apktool.jar d -f fx.apk -o decoded
+
+      - name: Replay all structural stages except Stage09e and Stage10b/Stage11
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r stage; do
+            b="$(basename "$stage")"
+            case "$b" in
+              stage09e_*|stage10b_*|stage11*) continue ;;
+            esac
+            python3 "$stage" decoded
+          done < <(find tools/stages -maxdepth 1 -type f -name 'stage*.py' -print | LC_ALL=C sort)
+
+      - name: Apply minimal app-wide companion gate without zero-GMS assertion
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import importlib.util, re
+          p=Path('tools/stages/stage10b_release_identity.py')
+          spec=importlib.util.spec_from_file_location('s10b',p)
+          m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+          root=Path('decoded')
+          m.configure_visibility(root)
+          removed,files=m.flatten_distributed_checks(root)
+          m.replace_helper_with_minimal_boolean(root)
+          m.add_one_appwide_gate(root)
+          y=root/'apktool.yml'; t=y.read_text()
+          t,n=re.subn(r'(versionCode:\s*)[^\n]+',r'\g<1>9109002',t,count=1)
+          if n!=1: raise RuntimeError('versionCode not found')
+          y.write_text(t)
+          print(f'no09e diagnostic normalized {removed} companion sites across {files} files; vc=9109002')
+          PY
+          python3 tools/stages/stage11a_branding_runtime_repair.py decoded
+
+      - name: Assert diagnostic isolation shape
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(grep -RIl 'nextapp.fx.rk' decoded/smali decoded/res decoded/assets decoded/AndroidManifest.xml 2>/dev/null | wc -l)" -eq 1
+          grep -q 'nextapp.fx.rk' decoded/smali/dw/filemanager/core/Companion.smali
+          test "$(grep -RIl 'Companion;->present(Landroid/content/Context;)Z' decoded/smali 2>/dev/null | wc -l)" -eq 1
+          grep -q 'Companion;->present(Landroid/content/Context;)Z' decoded/smali/dw/filemanager/DWApplication.smali
+          # Stage09e is intentionally bypassed, so the retained GMS island must be present for this isolation build.
+          count=$(find decoded/smali/com/google/android/gms -type f -name '*.smali' 2>/dev/null | wc -l)
+          test "$count" -gt 0
+          echo "retained_gms_classes=$count" | tee isolation-metrics.txt
+
+      - name: Build diagnostic APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          java -jar apktool.jar b decoded -o DW-File-Manager-v9109002-NO_STAGE09E_RUNTIME_ISOLATION-unsigned.apk
+          unzip -tq DW-File-Manager-v9109002-NO_STAGE09E_RUNTIME_ISOLATION-unsigned.apk
+          sha256sum DW-File-Manager-v9109002-NO_STAGE09E_RUNTIME_ISOLATION-unsigned.apk | tee unsigned.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dw-no-stage09e-runtime-isolation
+          path: |
+            DW-File-Manager-v9109002-NO_STAGE09E_RUNTIME_ISOLATION-unsigned.apk
+            unsigned.sha256
+            isolation-metrics.txt
+          retention-days: 3
