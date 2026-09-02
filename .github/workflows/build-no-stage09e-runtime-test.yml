@@ -50,14 +50,14 @@ jobs:
           m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
           root=Path('decoded')
           m.configure_visibility(root)
-          removed,files=m.flatten_distributed_checks(root)
+          removed,files,fallthrough,direct_goto,state_true=m.normalize_distributed_companion_paths(root)
           m.replace_helper_with_minimal_boolean(root)
           m.add_one_appwide_gate(root)
           y=root/'apktool.yml'; t=y.read_text()
           t,n=re.subn(r'(versionCode:\s*)[^\n]+',r'\g<1>9109002',t,count=1)
           if n!=1: raise RuntimeError('versionCode not found')
           y.write_text(t)
-          print(f'no09e diagnostic normalized {removed} companion sites across {files} files; vc=9109002')
+          print(f'no09e diagnostic normalized {removed} companion sites across {files} files: {fallthrough} fallthrough, {direct_goto} direct jumps, {state_true} state; vc=9109002')
           PY
           python3 tools/stages/stage11a_branding_runtime_repair.py decoded
 
