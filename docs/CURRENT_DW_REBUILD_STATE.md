@@ -6,205 +6,142 @@ This is the durable handoff for the structural DW File Manager rebuild. A transi
 
 ## Immutable inputs
 
-Accepted rebuild base:
-
-- FX 9.1.0.8 / versionCode 9108
-- SHA-256 `19af15780d0fc65242ed3f97d6397adfbb0055225cef84ccbc2c777b906bf2c6`
-- decoded classes: 12,079
-
-Known-working reference supplied by the user:
-
-- FX Extended 9108006
-- SHA-256 `0f160cf7bf43982303ccf752db1b2c3bfd8607edb70961b2df9a7ec04dfa175c`
-- reference only; never a patch/build base
-
-Pinned tools:
-
+- accepted base: FX 9.1.0.8 / versionCode 9108 / SHA-256 `19af15780d0fc65242ed3f97d6397adfbb0055225cef84ccbc2c777b906bf2c6`
+- known-working reference only: FX Extended 9108006 / SHA-256 `0f160cf7bf43982303ccf752db1b2c3bfd8607edb70961b2df9a7ec04dfa175c`
 - Apktool 3.0.3
 - smali/baksmali 3.0.10
+- private recovered FX Extended signing identity remains outside GitHub
 
-The previous FX Extended signing-key bundle is available privately outside GitHub. Never commit it.
-
-## Final target/invariants
+## Final target
 
 - label: **DW File Manager**
 - application ID: `com.mekromn.dwfilemanager`
-- app-owned implementation namespace: `dw.filemanager.*`
-- useful former extended modules: neutral namespace such as `dw.filemanager.ext.*`; no legacy `plus` namespace/classes/resources
-- compatibility target SDK: 34, retaining the known-working legacy inset/navigation behavior from the 9108006 reference
-- Dark Glass + AMOLED Black Transparent themes with exact Pixel blue `#4285F4`
-- opaque top app header
-- drawer body surface/transparency matched to popup-menu surface
-- new DW adaptive icon and no vendor iconography
-- no app-owned commerce/trial/status/product acquisition subsystem
-- no analytics/telemetry/background transport/promo/update network path
-- user-initiated SMB/SFTP/FTP/WebDAV/cloud/Web Access networking preserved
-- app-owned EULA/terms acceptance/vendor promo/legal flow removed; legally-required third-party notices retained locally
+- neutral app-owned namespace: `dw.filemanager.*`
+- useful extended modules: `dw.filemanager.ext.*`
+- compatibility target SDK: 34
+- Dark Glass + AMOLED Black Transparent, Pixel blue `#4285F4`
+- opaque top header; drawer body matches popup-menu surface
+- new DW adaptive icon; no upstream vendor artwork/branding
+- no app-owned commerce/trial/status/product acquisition system
+- no telemetry/DataTransport/background promo/update network path
+- deliberate SMB/SFTP/FTP/WebDAV/cloud/Web Access networking preserved
+- app-owned EULA/terms acceptance removed; third-party notices retained
 
-### Companion invariant
+## Companion invariant
 
-The only compatibility gate is one pure boolean helper:
+Only `dw.filemanager.core.Companion.present(Context)` may evaluate the external companion:
 
-1. look up external package `nextapp.fx.rk`;
+1. package `nextapp.fx.rk` lookup;
 2. missing -> false;
-3. verify its signer against the expected signer;
-4. return boolean.
+3. signer verification;
+4. boolean return.
 
-No cache, state object, timestamps, countdown, product/SKU data, version/installer test, broadcast listener, refresh operation, UI, network request or persistence is allowed around this helper.
-
-The external package identifier is compatibility data only. It may survive only in the helper and technically required Android package-visibility declaration.
+No cache/state/version/installer/account/time/product/broadcast/UI/network/persistence is permitted. The external package literal may survive only in the helper and the required Android package-visibility query.
 
 ## Durable verified stages
 
 ### Stage 01 — identity/theme
+`tools/stages/stage01_identity_theme.py` / `docs/checkpoints/STAGE01_IDENTITY_THEME.md`
 
-Files:
-
-- `tools/stages/stage01_identity_theme.py`
-- `docs/checkpoints/STAGE01_IDENTITY_THEME.md`
-
-Verified:
-
-- manifest package/label moved to DW identity;
-- old sharedUserId removed;
-- collision-sensitive authorities/permission moved to DW package;
-- target SDK metadata set to 34;
-- legacy developer store checkbox removed from XML;
-- Dark Glass + AMOLED theme resources registered;
-- Pixel blue wired into active/selection/trim/progress channels;
-- top theme action-bar surfaces opaque.
-
-Unsigned SHA-256: `a1ac8f21d5778f34c8da84a086bd670523664dace788fe0c058cf0e8001f701f`.
+Unsigned SHA-256 `a1ac8f21d5778f34c8da84a086bd670523664dace788fe0c058cf0e8001f701f`.
 
 ### Stage 02 — single companion boolean
+`tools/stages/stage02_companion_state.py` / `docs/checkpoints/STAGE02_COMPANION_STATE.md`
 
-Files:
-
-- `tools/stages/stage02_companion_state.py`
-- `docs/checkpoints/STAGE02_COMPANION_STATE.md`
-
-Verified:
-
-- one pure companion-present + signer-check helper;
-- normal capability consumers moved to direct boolean use;
-- old complex verifier/cached provider state removed;
-- no helper cache/version/installer/account/time/product/callback/UI/network/persistence.
-
-Unsigned SHA-256: `9045477eaf34d546eb7d2154355e55c8b124862582f871a5044a8ff38376063e`.
+Unsigned SHA-256 `9045477eaf34d546eb7d2154355e55c8b124862582f871a5044a8ff38376063e`.
 
 ### Stage 03 — trial/time-window/status removal
+`stage03a` through `stage03d` / `docs/checkpoints/STAGE03_TRIAL_STATUS_REMOVAL.md`
 
-Files:
+- Update/Refresh/status UI and trial tutorial removed;
+- time-window state/persistence/import/export removed;
+- trial/status resources removed.
 
-- `tools/stages/stage03a_about_tutorial.py`
-- `tools/stages/stage03b_remove_update_status.py`
-- `tools/stages/stage03c_remove_timewindow.py`
-- `tools/stages/stage03d_prune_trial_resources.py`
-- `docs/checkpoints/STAGE03_TRIAL_STATUS_REMOVAL.md`
-
-Verified:
-
-- native DW About surface replaces old trial/product/status construction;
-- tutorial trial/start path removed;
-- temporary integer capability adapter removed;
-- Update/Refresh activity/home item/status classes and their isolated R8 callback arms deleted;
-- expiration/time-window state, methods, persistence/import/export removed;
-- expired-trial constructor removed from shared dialog class without removing unrelated uses;
-- retired upgrade tutorial page/marker/resources removed;
-- app resources contain no trial occurrence.
-
-Unsigned SHA-256: `337692fd5b477f3bdbfa82d4a75a0162d6a126aa38ce59a39b7ee5d06f3f7832`.
-Rebuilt classes: 12,065.
+Unsigned SHA-256 `337692fd5b477f3bdbfa82d4a75a0162d6a126aa38ce59a39b7ee5d06f3f7832`; rebuilt classes 12,065.
 
 ### Stage 04 — commerce/product/acquisition removal
+`stage04a` through `stage04i` / `docs/checkpoints/STAGE04_COMMERCE_REMOVAL.md`
 
-Files:
+- app-owned IAB package removed;
+- public BillingClient API/proxies removed;
+- acquisition/product/SKU graph removed;
+- Web Access upgrade module/remote loader removed;
+- commerce Android/help resources removed or neutralized.
 
-- `tools/stages/stage04a_sever_commerce_roots.py`
-- `tools/stages/stage04b_remove_iab_core.py`
-- `tools/stages/stage04c_remove_acquisition_billing_api.py`
-- `tools/stages/stage04d_remove_web_upgrade.py`
-- `tools/stages/stage04e_remove_product_graph.py`
-- `tools/stages/stage04f_strip_shared_billing_helpers.py`
-- `tools/stages/stage04g_prune_commerce_resources.py`
-- `tools/stages/stage04h_remove_app_commerce_residue.py`
-- `tools/stages/stage04i_remove_faq_commerce.py`
-- `docs/checkpoints/STAGE04_COMMERCE_REMOVAL.md`
+Unsigned SHA-256 `5e2f8955b82821f6d2945c4e4c5b60a33367bfab991a4452b9a33a4a52fbca4f`; rebuilt classes 12,005.
+
+### Stage 05 — telemetry/DataTransport removal
+`stage05a` through `stage05g` / `docs/checkpoints/STAGE05_DATATRANSPORT_REMOVAL.md`
+
+- BillingLogger transport root removed;
+- 56 unreachable shaded classes pruned;
+- DataTransport scheduler/backend/event-store/CCT graph removed method-by-method and by proven reachability;
+- zero DataTransport/CCT/event-store markers in rebuilt DEX.
+
+Unsigned SHA-256 `0ebd351fa60422c3e1ea7a670754ea8c12e8ef49c92b59d8034c5f34b1481086`; rebuilt classes 11,895.
+
+### Stage 06 — neutral namespace + JNI
+`stage06a` through `stage06c` / `docs/checkpoints/STAGE06_NAMESPACE_JNI.md`
+
+- 549 app-owned `nextapp.*` classes migrated to `dw.filemanager.*`;
+- useful legacy extended modules migrated to `dw.filemanager.ext.*`;
+- 111 reachable R8-shared generated helpers migrated to `dw.filemanager.runtime.*`;
+- old `play_billing` namespace and live `Plus*` identifiers removed;
+- four ABI JNI bridges migrated to `Java_dw_filemanager_NativeFileAccess_*`;
+- zero old `Lnextapp/...` descriptors and zero `plus` tokens in DW executable/resources.
+
+Unsigned SHA-256 `27fdb08054cf2d82a311be407f4a891a9cf0c272031aa3d889f11d6699c54f21`; rebuilt classes 11,895.
+
+### Stage 07 — legal/vendor/background-network cleanup
+Scripts:
+
+- `tools/stages/stage07a_remove_legal_gate.py`
+- `tools/stages/stage07b_remove_privacy_surface.py`
+- `tools/stages/stage07c_rebrand_help_web.py`
+- `tools/stages/stage07d_remove_dead_gms.py`
+- `tools/stages/stage07e_html5_audio.py`
+- `docs/checkpoints/STAGE07_LEGAL_NETWORK.md`
 
 Verified:
 
-- app-owned IAB package physically deleted;
-- public BillingClient API/proxy activities removed;
-- acquisition dialog/actions/callbacks/broadcasts removed;
-- dedicated product/SKU/detail graph removed;
-- Web Access upgrade tab/module/remote upgrade loader removed from standalone and bundled JS;
-- user-facing commerce resources removed/neutralized across locales;
-- commerce FAQ text removed;
-- outside the shaded generated runtime, rebuilt DEX has no commerce path.
+- first-run app-owned EULA/license acceptance flow and state physically removed;
+- vendor-owned legal/privacy assets removed while third-party notices remain;
+- obsolete Privacy Information settings row/click branch removed;
+- help/Web Access vendor support links and NextApp/standalone FX branding removed from packaged assets;
+- four vendor branding PNGs deleted;
+- Google Drive reachability graph proves 9 GMS classes required by user-initiated Drive auth; four unreachable GMS/lifecycle/Dynamite files deleted;
+- Web Access SoundManager2/Flash fallback replaced with 1,181-byte HTML5 Audio-only shim;
+- no vendor update/theme/support/promo/telemetry endpoint remains;
+- startup path contains local/device/module/cache initialization only; no outbound request;
+- no telemetry/update/promo background service/receiver remains.
 
-Final Stage 04 unsigned SHA-256: `5e2f8955b82821f6d2945c4e4c5b60a33367bfab991a4452b9a33a4a52fbca4f`.
-Rebuilt classes: 12,005.
+Current Stage 07e unsigned checkpoint:
 
-### Stage 05 — telemetry/DataTransport structural removal
+- size 12,891,901 bytes
+- SHA-256 `262444c8ab906d04c840cab148f862e80c3fe832e6cef18015a03f127f090782`
 
-Files:
+### Explicit Box OAuth release blocker
 
-- `tools/stages/stage05a_sever_logging_transport.py`
-- `tools/stages/stage05b_prune_unreachable_shaded.py`
-- `tools/stages/stage05c_remove_transport_runtime.py`
-- `tools/stages/stage05d_remove_transport_backend.py`
-- `tools/stages/stage05e_strip_eventstore_bridges.py`
-- `tools/stages/stage05f_strip_last_transport_mixed.py`
-- `tools/stages/stage05g_prune_datatransport_graph.py`
-- `docs/checkpoints/STAGE05_DATATRANSPORT_REMOVAL.md`
+Two executable references to `https://android.nextapp.com/_boxredirect` remain solely in the Box OAuth flow. Box currently exact-matches configured OAuth redirects. The embedded upstream Box client registration cannot be changed from APK code. Do not hide/encode this string and call it removed.
 
-Verified:
+Resolution must be one of:
 
-- BillingLogger-to-transport send root physically removed;
-- first reachability pass deleted 56 shaded classes with no surviving root;
-- DataTransport discovery/scheduler Android components removed from manifest;
-- scheduler/runtime/backend/event-store/CCT provider branches removed method-by-method from R8-shared classes;
-- 45-class dedicated transport graph proven to have zero external roots and physically deleted;
-- rebuilt DEX has no DataTransport namespace classes or CCT/event-store/database markers;
-- old IAB and public BillingClient refs remain zero.
+- DW-controlled/configurable Box OAuth credentials + neutral HTTPS/loopback redirect; or
+- remove Box support if zero vendor references takes priority.
 
-Final Stage 05 unsigned APK:
+An experimental redirect-omission path is possible only if the upstream Box application has a compatible single registered redirect and requires a real login test before acceptance.
 
-- size: 12,943,018 bytes
-- SHA-256: `0ebd351fa60422c3e1ea7a670754ea8c12e8ef49c92b59d8034c5f34b1481086`
-- rebuilt classes: 11,895
-- ZIP integrity: clean
+## Current next stage — Stage 08: UI/resource branding and icon
 
-### Important shaded-runtime boundary after Stage 05
+Start from verified Stage 07e tree.
 
-`com.google.android.gms.internal.play_billing` now contains 111 classes.
+1. Inventory remaining `fx`-named app-owned Android resource IDs/visible values and migrate branding-specific identifiers without changing generic technical meanings accidentally.
+2. Implement the drawer **body** theme hook so drawer surface/transparency equals the popup-menu surface for the new themes.
+3. Create and install a new DW File Manager adaptive icon; remove all remaining upstream app icon/logo resources.
+4. Rebuild and independently inspect resources/DEX for vendor-visible branding.
+5. Run orphan resource/dead asset pruning that is safe after Stages 03–07.
+6. Checkpoint Stage 08 to GitHub.
 
-Fresh reachability result:
-
-- total: 111
-- external roots: 13
-- reachable: 111
-- unreachable: 0
-
-These survivors include R8-shared generic callback/progress/stream/collection/backport helpers used by normal file-manager code. Do not delete them by package name. Their legacy package name is nevertheless unacceptable final DW naming and must be migrated to a neutral runtime namespace in Stage 06.
-
-## Important native boundary
-
-Four ABI copies of `libnative-file-access.so` contain JNI symbols tied to `nextapp.xf.shell.NativeFileAccess`. Java namespace migration must patch all four native libraries consistently with the migrated bridge name. Do not rename only the smali class.
-
-## Current next stage — Stage 06: neutral namespace/JNI migration
-
-Start from the verified Stage 05 tree.
-
-1. Inventory every surviving app-owned `nextapp.*` descriptor, manifest component/action/provider/authority string, reflection/serialized class-name string and resource/module identifier.
-2. Migrate ordinary app-owned `nextapp.fx.*` implementation to `dw.filemanager.*` through real smali/path changes.
-3. Migrate useful former `nextapp.fx.plus.*` Media/Network/Web Access implementation to `dw.filemanager.ext.*` and rename live `Plus*` class identifiers/resources to neutral `Ext*` names.
-4. Preserve external `nextapp.fx.rk` only in `Companion.present()` and the package-visibility query.
-5. Migrate `nextapp.xf.shell.NativeFileAccess` to a neutral bridge and patch the JNI exported-symbol strings in all four `libnative-file-access.so` ABI libraries consistently.
-6. Migrate the 111 reachable shaded generated classes from `com.google.android.gms.internal.play_billing` to a neutral DW runtime namespace without deleting their generic behavior.
-7. Rebuild with Apktool; independently disassemble rebuilt DEX; verify no dangling old descriptors and no vendor/legacy `plus` implementation namespace remains except the external companion compatibility datum.
-8. Checkpoint Stage 06 to GitHub before EULA/vendor/help/Google-common-network cleanup.
-
-After Stage 06: EULA/vendor branding/help and Google common/Drive OAuth reachability audit, drawer/body UI + DW icon, resource/orphan pruning, signing, full structural/network audit, then device startup/settings/local/root/Media/network/cloud/Web Access regression testing.
+After Stage 08: resolve Box blocker, final versioning/signing, full structural/network audit, then device startup/settings/local/root/Media/network/cloud/Web Access regression testing.
 
 No APK is complete until the final file exists, is signed/verified, and passes the acceptance checklist.
