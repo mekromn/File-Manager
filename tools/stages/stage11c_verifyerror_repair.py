@@ -2,12 +2,12 @@
 from pathlib import Path
 import argparse,re
 
-VERSION_CODE='9109003'
+VERSION_CODE='9109004'
 
 def main():
     ap=argparse.ArgumentParser(); ap.add_argument('decoded',type=Path); a=ap.parse_args(); root=a.decoded
 
-    # Install over the already-issued 9109002 diagnostic build.
+    # Install over the already-issued 9109003 Settings/Apps repair build.
     yml=root/'apktool.yml'; t=yml.read_text()
     t,n=re.subn(r'(versionCode:\s*)[^\n]+',r'\g<1>'+VERSION_CODE,t,count=1)
     if n!=1: raise RuntimeError('versionCode field missing')
@@ -28,6 +28,13 @@ def main():
     if '0x7f100610' in m or '0x7f10060f' in m or 'dw.filemanager.intent.extra.privacy' in text:
         raise RuntimeError('removed privacy UI unexpectedly restored')
 
-    print(f'stage11c verifier repair guard passed; repair candidate versionCode={VERSION_CODE}')
+    # App Details explicit target must point to the actual migrated class.
+    g=(root/'smali/gf/c.smali').read_text()
+    good='dw.filemanager.ext.ui.app.AppDetailsActivity'
+    bad='dw.filemanager.ui.app.AppDetailsActivity'
+    if g.count(good)!=1 or bad in g:
+        raise RuntimeError('AppDetailsActivity explicit class target regression')
+
+    print(f'stage11c verifier/activity repair guards passed; repair candidate versionCode={VERSION_CODE}')
 
 if __name__=='__main__': main()
