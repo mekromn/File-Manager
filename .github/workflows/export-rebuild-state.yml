@@ -1,0 +1,28 @@
+name: Export rebuild state
+
+on:
+  push:
+    paths:
+      - '.github/workflows/export-rebuild-state.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Package checked-in rebuild state
+        run: |
+          set -euo pipefail
+          tar -czf dw-rebuild-state.tar.gz tools docs .github/workflows
+          sha256sum dw-rebuild-state.tar.gz > dw-rebuild-state.tar.gz.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dw-rebuild-state
+          path: |
+            dw-rebuild-state.tar.gz
+            dw-rebuild-state.tar.gz.sha256
+          retention-days: 3
