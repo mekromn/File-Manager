@@ -1,0 +1,41 @@
+name: Diagnose JNI loader
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [stage11-runtime-repair]
+    paths:
+      - '.github/workflows/diagnose-jni-loader.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Decode and replay final tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 4 --retry-all-errors -o fx.apk 'https://d.apkpure.net/b/APK/nextapp.fx?version=latest'
+          echo '19af15780d0fc65242ed3f97d6397adfbb0055225cef84ccbc2c777b906bf2c6  fx.apk' | sha256sum -c -
+          curl -fL --retry 4 --retry-all-errors -o apktool.jar 'https://github.com/iBotPeaches/Apktool/releases/download/v3.0.3/apktool_3.0.3.jar'
+          echo 'dbf930b076c6b9be08d57c449cacefc3bdd6b71ebd59b3066fc0e1f5b14f9423  apktool.jar' | sha256sum -c -
+          java -jar apktool.jar d -f fx.apk -o decoded
+          while IFS= read -r stage; do python3 "$stage" decoded; done < <(find tools/stages -maxdepth 1 -type f -name 'stage*.py' -print | LC_ALL=C sort)
+          mkdir -p diag
+          cp decoded/smali/dw/filemanager/NativeFileAccess.smali diag/NativeFileAccess.smali
+          grep -Rni -C 5 'System;->loadLibrary\|System;->load(' decoded/smali > diag/all-native-load-calls.txt || true
+          for so in decoded/lib/*/libnative-file-access.so; do
+            echo "===== $so =====" >> diag/elf-symbols.txt
+            readelf -Ws "$so" | grep -E 'NativeFileAccess|nativeMkfifo|nativeGetLastModified' >> diag/elf-symbols.txt || true
+            echo >> diag/elf-symbols.txt
+          done
+          grep -n -C 12 'nativeMkfifo\|nativeGetLastModified\|<clinit>\|loadLibrary' decoded/smali/dw/filemanager/NativeFileAccess.smali > diag/native-access-context.txt || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jni-loader-diagnostic
+          path: diag
+          retention-days: 3

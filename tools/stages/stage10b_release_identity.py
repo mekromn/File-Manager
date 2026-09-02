@@ -11,16 +11,34 @@ HELPER_DESC='Ldw/filemanager/core/Companion;'
 HELPER_CALL=HELPER_DESC+'->present(Landroid/content/Context;)Z'
 QUERY_PERMISSION='android.permission.QUERY_ALL_PACKAGES'
 
-def next_instruction(lines,start):
-    for i in range(start+1,min(len(lines),start+12)):
+
+def next_instruction(lines,start,limit=48):
+    for i in range(start+1,min(len(lines),start+1+limit)):
         s=lines[i].strip()
         if not s or s.startswith('.line') or s.startswith('#'):
             continue
         return i,s
     return None,None
 
-def flatten_distributed_checks(root):
-    calls=0; files=0
+
+def find_first_register_use(lines,start,reg,limit=64):
+    for i in range(start+1,min(len(lines),start+1+limit)):
+        s=lines[i].strip()
+        if not s or s.startswith('.line') or s.startswith('#'):
+            continue
+        if re.search(r'(?<![A-Za-z0-9_])'+re.escape(reg)+r'(?![A-Za-z0-9_])',s):
+            return i,s
+    return None,None
+
+
+def normalize_distributed_companion_paths(root):
+    """Erase every old feature-level companion decision.
+
+    After the one process-wide startup gate succeeds, old companion-controlled code must
+    take the ordinary/available path directly. We do not synthesize a companion boolean
+    and leave conditional branches behind.
+    """
+    calls=0; files=0; fallthrough=0; direct_goto=0; state_true=0
     for sd in root.glob('smali*'):
         for p in sd.rglob('*.smali'):
             lines=p.read_text(errors='ignore').splitlines()
@@ -32,19 +50,49 @@ def flatten_distributed_checks(root):
                 if j is None or not ins.startswith('move-result '):
                     raise RuntimeError(f'Companion.present without move-result: {p}:{i+1}')
                 reg=ins.split()[-1]
-                lines[i]=f'    const/4 {reg}, 0x1'
-                lines[j]='    # old distributed companion gate removed; process startup gate already passed'
-                calls+=1; local+=1; i=j+1
+                k,use=find_first_register_use(lines,j,reg)
+                if k is None:
+                    raise RuntimeError(f'cannot find first use of companion result {reg}: {p}:{j+1}')
+
+                # Remove the call and move-result themselves in every feature path.
+                lines[i]='    # distributed companion check removed: startup gate is authoritative'
+                lines[j]='    # no per-feature companion result'
+
+                if re.fullmatch(r'if-eqz\s+'+re.escape(reg)+r',\s*:[A-Za-z0-9_]+',use):
+                    # Companion-present used to fall through into the real feature path.
+                    # Delete the skip branch so ordinary execution always falls through.
+                    lines[k]='    # companion-missing skip removed: ordinary path always executes'
+                    fallthrough+=1
+                elif re.fullmatch(r'if-nez\s+'+re.escape(reg)+r',\s*:[A-Za-z0-9_]+',use):
+                    # Companion-present used to jump over an unavailable/error branch.
+                    # Jump there directly; the unavailable branch is now unreachable.
+                    label=use.split(',',1)[1].strip()
+                    lines[k]=f'    goto {label}    # ordinary path; companion error branch bypassed'
+                    direct_goto+=1
+                elif re.fullmatch(r'sput-boolean\s+'+re.escape(reg)+r',\s*Ldw/filemanager/ext/ui/j;->a:Z',use):
+                    # The old shared availability flag is no longer companion-derived.
+                    # Keep the existing home-model contract but pin it to ordinary/available.
+                    lines[i]=f'    const/4 {reg}, 0x1    # ordinary extension availability'
+                    lines[k]=f'    sput-boolean {reg}, Ldw/filemanager/ext/ui/j;->a:Z'
+                    state_true+=1
+                else:
+                    raise RuntimeError(f'unclassified companion-result use {use!r}: {p}:{k+1}')
+
+                calls+=1; local+=1; i=max(j,k)+1
             if local:
                 p.write_text('\n'.join(lines)+'\n'); files+=1
     if calls < 1:
         raise RuntimeError('expected distributed companion checks from Stage02, found none')
-    return calls,files
+    if calls != fallthrough + direct_goto + state_true:
+        raise RuntimeError('companion normalization accounting mismatch')
+    return calls,files,fallthrough,direct_goto,state_true
+
 
 def replace_helper_with_minimal_boolean(root):
     helper=root/'smali/dw/filemanager/core/Companion.smali'
     if not helper.exists(): raise RuntimeError('Stage02 Companion helper missing')
     helper.write_text(f'''.class public final Ldw/filemanager/core/Companion;\n.super Ljava/lang/Object;\n\n# The only companion check in DW. Package-name existence only.\n.method public static present(Landroid/content/Context;)Z\n    .locals 3\n\n    :try_start_dw\n    invoke-virtual {{p0}}, Landroid/content/Context;->getPackageManager()Landroid/content/pm/PackageManager;\n    move-result-object v0\n\n    const-string v1, "{COMPANION}"\n    const/4 v2, 0x0\n    invoke-virtual {{v0, v1, v2}}, Landroid/content/pm/PackageManager;->getPackageInfo(Ljava/lang/String;I)Landroid/content/pm/PackageInfo;\n\n    const/4 v0, 0x1\n    :try_end_dw\n    .catch Landroid/content/pm/PackageManager$NameNotFoundException; {{:try_start_dw .. :try_end_dw}} :missing\n    return v0\n\n    :missing\n    const/4 v0, 0x0\n    return v0\n.end method\n''')
+
 
 def add_one_appwide_gate(root):
     app=root/'smali/dw/filemanager/DWApplication.smali'
@@ -66,6 +114,7 @@ def add_one_appwide_gate(root):
     m=m[:decl2.end()]+gate+m[decl2.end():]
     app.write_text(t[:s]+m+t[e:])
 
+
 def configure_visibility(root):
     """Keep the companion package literal out of the manifest entirely."""
     manifest=root/'AndroidManifest.xml'; mt=manifest.read_text()
@@ -73,12 +122,12 @@ def configure_visibility(root):
         raise RuntimeError(f'expected one legacy manifest companion query before final consolidation, got {mt.count(COMPANION)}')
     mt,n=re.subn(r'\s*<package\s+android:name="'+re.escape(COMPANION)+r'"\s*/>\s*','\n',mt,count=1)
     if n!=1: raise RuntimeError('could not remove companion package query')
-    # Remove empty <queries> container if that was its only child.
     mt=re.sub(r'\s*<queries>\s*</queries>\s*','\n',mt)
     if QUERY_PERMISSION not in mt:
         pos=mt.find('>')+1
         mt=mt[:pos]+f'\n    <uses-permission android:name="{QUERY_PERMISSION}" />'+mt[pos:]
     manifest.write_text(mt)
+
 
 def main():
     ap=argparse.ArgumentParser(); ap.add_argument('decoded',type=Path); a=ap.parse_args(); root=a.decoded
@@ -97,7 +146,7 @@ def main():
     if 'com.google.android.gms' in mt: raise RuntimeError('GMS manifest reference remains')
 
     configure_visibility(root)
-    removed,files=flatten_distributed_checks(root)
+    removed,files,fallthrough,direct_goto,state_true=normalize_distributed_companion_paths(root)
     replace_helper_with_minimal_boolean(root)
     add_one_appwide_gate(root)
 
@@ -139,6 +188,15 @@ def main():
     if h.count('getPackageInfo(Ljava/lang/String;I)')!=1: raise RuntimeError('minimal helper must perform exactly one package lookup')
     if h.count('const-string v1, "'+COMPANION+'"')!=1: raise RuntimeError('minimal helper must contain sole package literal exactly once')
 
+    # No feature-level companion conditional may survive Stage10b.
+    for sd in root.glob('smali*'):
+        for p in sd.rglob('*.smali'):
+            if p == root/'smali/dw/filemanager/DWApplication.smali':
+                continue
+            txt=p.read_text(errors='ignore')
+            if HELPER_CALL in txt:
+                raise RuntimeError('feature-level companion call survived: '+str(p.relative_to(root)))
+
     fx=[]
     for base in (root/'smali',root/'res',root/'assets'):
         if not base.exists(): continue
@@ -154,7 +212,7 @@ def main():
     if export.count('const-string v3, "DW_"')!=1: raise RuntimeError('DW_ export prefix missing/duplicated')
 
     print(f'stage10b release identity frozen: {PACKAGE} vc={VERSION_CODE} vn={VERSION_NAME} target={TARGET_SDK}')
-    print(f'stage10b removed {removed} distributed companion checks across {files} files')
-    print('stage10b FINAL companion design: ONE app-wide caller; ONE getPackageInfo(name,0); ONE package literal total; NO other companion logic')
+    print(f'stage10b normalized {removed} distributed companion sites across {files} files: {fallthrough} ordinary fall-through, {direct_goto} direct ordinary jumps, {state_true} availability-state normalization')
+    print('stage10b FINAL companion design: ONE app-wide caller; ONE getPackageInfo(name,0); ONE package literal total; ALL former companion branches are ordinary paths')
 
 if __name__=='__main__': main()

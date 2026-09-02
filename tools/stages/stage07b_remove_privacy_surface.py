@@ -12,9 +12,27 @@ def main():
     while end<len(lines) and target not in lines[end]: end+=1
     if end>=len(lines): raise RuntimeError('privacy preference tail not found')
     body='\n'.join(lines[hit:end+1])
-    for tok in ('0x7f100610','0x7f10060f','Lrf/h;-><init>'):
+    for tok in ('0x7f100610','0x7f10060f','Lrf/h;-><init>','const/4 v8, 0x2'):
         if tok not in body: raise RuntimeError(f'privacy preference block missing {tok}')
-    p.write_text('\n'.join(lines[:hit]+lines[end+1:])+'\n')
+
+    # IMPORTANT: v8 is not private to the removed preference row. The original method
+    # intentionally initializes it to 2 here and later reuses it as the Object[] length
+    # for the About/version summary. Deleting the whole block made v8 Undefined on the
+    # surviving path, which ART rejects with VerifyError when MainPrefActivity loads.
+    # Remove the obsolete privacy preference construction but preserve the shared value.
+    replacement=['    const/4 v8, 0x2    # retained shared register: later Object[2] version summary']
+    p.write_text('\n'.join(lines[:hit]+replacement+lines[end+1:])+'\n')
+
+    # Structural regression guard for the exact on-device VerifyError we fixed.
+    method=p.read_text()
+    sig='b(Ldw/filemanager/ui/fxsystem/MainPrefActivity;Landroid/preference/PreferenceGroup;)V'
+    decl=next((l for l in method.splitlines() if l.startswith('.method') and sig in l),None)
+    if decl is None: raise RuntimeError('ph/m method b declaration missing after privacy cut')
+    ms=method.index(decl); me=method.index('.end method',ms); mb=method[ms:me]
+    init=mb.find('const/4 v8, 0x2')
+    use=mb.find('new-array v4, v8, [Ljava/lang/Object;')
+    if init<0 or use<0 or init>use:
+        raise RuntimeError('ph/m v8 definite initialization before version-summary array was lost')
 
     p=sm/'rf/h.smali'; lines=p.read_text().splitlines()
     dispatch=next(i for i,l in enumerate(lines) if 'packed-switch p1, :pswitch_data_0' in l)
@@ -55,5 +73,5 @@ def main():
             raise RuntimeError(f'{sp}: old About value survives')
         if 'name="pref_about_summary"' in text and 'Version and application information' not in text:
             raise RuntimeError(f'{sp}: old About summary survives')
-    print('stage07b obsolete app privacy settings surface removed')
+    print('stage07b obsolete app privacy settings surface removed; ph/m shared v8 register flow preserved')
 if __name__=='__main__': main()
