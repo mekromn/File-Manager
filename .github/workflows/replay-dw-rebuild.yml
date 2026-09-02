@@ -8,6 +8,15 @@ on:
       - 'docs/checkpoints/**'
       - 'docs/CURRENT_DW_REBUILD_STATE.md'
       - '.github/workflows/replay-dw-rebuild.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'tools/stages/**'
+      - 'assets/dw-icons/**'
+      - 'docs/checkpoints/**'
+      - 'docs/CURRENT_DW_REBUILD_STATE.md'
+      - '.github/workflows/replay-dw-rebuild.yml'
   workflow_dispatch:
 
 permissions:
@@ -74,4 +83,5 @@ jobs:
             DW-File-Manager-replay-unsigned.apk.sha256
             replay-stages.txt
             replay-metrics.txt
+            stage10-network-inventory.txt
           retention-days: 3
