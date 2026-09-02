@@ -7,20 +7,21 @@ def main():
     ap=argparse.ArgumentParser(); ap.add_argument('decoded',type=Path); a=ap.parse_args(); root=a.decoded
 
     # The dynamic icon slot names are internal compatibility keys, but their images must
-    # never render legacy FX artwork. Reuse the verified DW launcher artwork directly.
+    # never render legacy FX artwork. Match complete XML attribute values so root/non-root
+    # names cannot collide by substring.
     iconset=root/'res/xml/iconset_dynamic_ext.xml'
     t=iconset.read_text()
-    replacements={
-        '@drawable/i144_dw':'@mipmap/ic_launcher_app',
-        '@drawable/i288_dw':'@mipmap/ic_launcher_app',
-        '@drawable/i144_dw_root':'@mipmap/ic_launcher_app',
-        '@drawable/i288_dw_root':'@mipmap/ic_launcher_app',
-    }
+    tokens=(
+        'value="@drawable/i144_dw_root"',
+        'value="@drawable/i288_dw_root"',
+        'value="@drawable/i144_dw"',
+        'value="@drawable/i288_dw"',
+    )
     changed=0
-    for old,new in replacements.items():
+    for old in tokens:
         c=t.count(old)
-        if c!=1: raise RuntimeError(f'expected exactly one {old} in dynamic iconset, got {c}')
-        t=t.replace(old,new,1); changed+=1
+        if c!=1: raise RuntimeError(f'expected exactly one exact XML token {old}, got {c}')
+        t=t.replace(old,'value="@mipmap/ic_launcher_app"',1); changed+=1
     iconset.write_text(t)
 
     # One executable legacy display/log label escaped the earlier XML-only brand pass.
