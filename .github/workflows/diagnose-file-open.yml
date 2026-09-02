@@ -29,10 +29,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p diag
+          mkdir -p diag/full
           python3 - <<'PY'
           from pathlib import Path
-          import re
+          import re, shutil
           root=Path('decoded')
           pats=[
             'android.intent.action.VIEW','android.intent.action.EDIT','createChooser',
@@ -41,13 +41,13 @@ jobs:
             'MimeTypeMap','application/octet-stream','Open with','open with','OPEN_WITH'
           ]
           out=[]
+          candidate_files=[]
           for sd in root.glob('smali*'):
             for p in sd.rglob('*.smali'):
               t=p.read_text(errors='ignore')
-              hits=[]
-              for pat in pats:
-                if pat in t: hits.append(pat)
+              hits=[pat for pat in pats if pat in t]
               if hits:
+                candidate_files.append(p)
                 lines=t.splitlines()
                 out.append(f'===== {p.relative_to(root)} :: {", ".join(hits)} =====')
                 for i,line in enumerate(lines):
@@ -56,6 +56,27 @@ jobs:
                     out.extend(f'{j+1:05d}: {lines[j]}' for j in range(lo,hi))
                     out.append('---')
           Path('diag/open-dispatch-context.txt').write_text('\n'.join(out)+'\n')
+
+          # Capture the likely central dispatchers whole so Stage12 can patch structurally.
+          wanted=[
+            'smali/hf/b0.smali','smali/hf/y0.smali','smali/qe/d.smali',
+            'smali/gf/o.smali','smali/ce/i.smali','smali/af/g.smali',
+            'smali/ze/a.smali','smali/hh/n.smali'
+          ]
+          for rel in wanted:
+            p=root/rel
+            if p.exists():
+              dest=Path('diag/full')/(rel.replace('/','__'))
+              shutil.copy2(p,dest)
+
+          # Find every call INTO hf/b0 and every construction of that class.
+          refs=[]
+          for sd in root.glob('smali*'):
+            for p in sd.rglob('*.smali'):
+              t=p.read_text(errors='ignore')
+              if 'Lhf/b0;' in t:
+                refs.append(f'===== {p.relative_to(root)} =====\n'+t)
+          Path('diag/hf-b0-callers.txt').write_text('\n'.join(refs)+'\n')
 
           # Resource/menu/string inventory relevant to Open/Open with / file associations.
           rout=[]
@@ -70,6 +91,7 @@ jobs:
           Path('diag/open-resource-context.txt').write_text('\n'.join(rout)+'\n')
           print(f'open_dispatch_bytes={Path("diag/open-dispatch-context.txt").stat().st_size}')
           print(f'open_resource_bytes={Path("diag/open-resource-context.txt").stat().st_size}')
+          print(f'hf_b0_callers_bytes={Path("diag/hf-b0-callers.txt").stat().st_size}')
           PY
           grep -n -E 'android.intent.action.VIEW|createChooser|setDataAndType|queryIntentActivities|resolveActivity|Open with|open with' diag/open-dispatch-context.txt | head -n 240 || true
       - uses: actions/upload-artifact@v4
