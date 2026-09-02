@@ -7,9 +7,9 @@ VERSION_CODE='9109000'
 VERSION_NAME='9.1.0.8'
 TARGET_SDK='34'
 COMPANION='nextapp.fx.rk'
-RESOURCE_NAME='dw_companion_package'
 HELPER_DESC='Ldw/filemanager/core/Companion;'
 HELPER_CALL=HELPER_DESC+'->present(Landroid/content/Context;)Z'
+QUERY_PERMISSION='android.permission.QUERY_ALL_PACKAGES'
 
 def next_instruction(lines,start):
     for i in range(start+1,min(len(lines),start+12)):
@@ -41,29 +41,10 @@ def flatten_distributed_checks(root):
         raise RuntimeError('expected distributed companion checks from Stage02, found none')
     return calls,files
 
-def allocate_string_resource(root):
-    strings=root/'res/values/strings.xml'; st=strings.read_text()
-    if RESOURCE_NAME in st: raise RuntimeError('companion package resource already exists')
-    st=st.replace('</resources>',f'    <string name="{RESOURCE_NAME}" translatable="false">{COMPANION}</string>\n</resources>',1)
-    strings.write_text(st)
-
-    public=root/'res/values/public.xml'; pt=public.read_text()
-    ids=[int(m.group(1),16) for m in re.finditer(r'<public type="string" name="[^"]+" id="(0x[0-9a-fA-F]+)"\s*/>',pt)]
-    if not ids: raise RuntimeError('no public string ids found')
-    prefix=ids[0] & 0xffff0000
-    if any((x & 0xffff0000)!=prefix for x in ids): raise RuntimeError('string resource id type prefix inconsistent')
-    rid=max(ids)+1
-    if (rid & 0xffff0000)!=prefix or (rid & 0xffff)==0: raise RuntimeError('no safe next public string id')
-    all_ids={int(x,16) for x in re.findall(r'id="(0x[0-9a-fA-F]+)"',pt)}
-    if rid in all_ids: raise RuntimeError('chosen companion resource id already used')
-    pt=pt.replace('</resources>',f'    <public type="string" name="{RESOURCE_NAME}" id="0x{rid:08x}" />\n</resources>',1)
-    public.write_text(pt)
-    return rid
-
-def replace_helper_with_minimal_boolean(root,rid):
+def replace_helper_with_minimal_boolean(root):
     helper=root/'smali/dw/filemanager/core/Companion.smali'
     if not helper.exists(): raise RuntimeError('Stage02 Companion helper missing')
-    helper.write_text(f'''.class public final Ldw/filemanager/core/Companion;\n.super Ljava/lang/Object;\n\n# The only companion check in DW. Package name only.\n.method public static present(Landroid/content/Context;)Z\n    .locals 3\n\n    :try_start_dw\n    invoke-virtual {{p0}}, Landroid/content/Context;->getPackageManager()Landroid/content/pm/PackageManager;\n    move-result-object v0\n\n    const v1, 0x{rid:08x}\n    invoke-virtual {{p0, v1}}, Landroid/content/Context;->getString(I)Ljava/lang/String;\n    move-result-object v1\n\n    const/4 v2, 0x0\n    invoke-virtual {{v0, v1, v2}}, Landroid/content/pm/PackageManager;->getPackageInfo(Ljava/lang/String;I)Landroid/content/pm/PackageInfo;\n\n    const/4 v0, 0x1\n    :try_end_dw\n    .catch Landroid/content/pm/PackageManager$NameNotFoundException; {{:try_start_dw .. :try_end_dw}} :missing\n    return v0\n\n    :missing\n    const/4 v0, 0x0\n    return v0\n.end method\n''')
+    helper.write_text(f'''.class public final Ldw/filemanager/core/Companion;\n.super Ljava/lang/Object;\n\n# The only companion check in DW. Package-name existence only.\n.method public static present(Landroid/content/Context;)Z\n    .locals 3\n\n    :try_start_dw\n    invoke-virtual {{p0}}, Landroid/content/Context;->getPackageManager()Landroid/content/pm/PackageManager;\n    move-result-object v0\n\n    const-string v1, "{COMPANION}"\n    const/4 v2, 0x0\n    invoke-virtual {{v0, v1, v2}}, Landroid/content/pm/PackageManager;->getPackageInfo(Ljava/lang/String;I)Landroid/content/pm/PackageInfo;\n\n    const/4 v0, 0x1\n    :try_end_dw\n    .catch Landroid/content/pm/PackageManager$NameNotFoundException; {{:try_start_dw .. :try_end_dw}} :missing\n    return v0\n\n    :missing\n    const/4 v0, 0x0\n    return v0\n.end method\n''')
 
 def add_one_appwide_gate(root):
     app=root/'smali/dw/filemanager/DWApplication.smali'
@@ -85,6 +66,20 @@ def add_one_appwide_gate(root):
     m=m[:decl2.end()]+gate+m[decl2.end():]
     app.write_text(t[:s]+m+t[e:])
 
+def configure_visibility(root):
+    """Keep the companion package literal out of the manifest entirely."""
+    manifest=root/'AndroidManifest.xml'; mt=manifest.read_text()
+    if mt.count(COMPANION)!=1:
+        raise RuntimeError(f'expected one legacy manifest companion query before final consolidation, got {mt.count(COMPANION)}')
+    mt,n=re.subn(r'\s*<package\s+android:name="'+re.escape(COMPANION)+r'"\s*/>\s*','\n',mt,count=1)
+    if n!=1: raise RuntimeError('could not remove companion package query')
+    # Remove empty <queries> container if that was its only child.
+    mt=re.sub(r'\s*<queries>\s*</queries>\s*','\n',mt)
+    if QUERY_PERMISSION not in mt:
+        pos=mt.find('>')+1
+        mt=mt[:pos]+f'\n    <uses-permission android:name="{QUERY_PERMISSION}" />'+mt[pos:]
+    manifest.write_text(mt)
+
 def main():
     ap=argparse.ArgumentParser(); ap.add_argument('decoded',type=Path); a=ap.parse_args(); root=a.decoded
 
@@ -101,15 +96,12 @@ def main():
     if f'package="{PACKAGE}"' not in mt: raise RuntimeError('final package identity mismatch')
     if 'com.google.android.gms' in mt: raise RuntimeError('GMS manifest reference remains')
 
-    if mt.count(COMPANION)!=1: raise RuntimeError(f'pre-consolidation manifest companion literal count={mt.count(COMPANION)}')
-    rid=allocate_string_resource(root)
-    mt=mt.replace(f'android:name="{COMPANION}"',f'android:name="@string/{RESOURCE_NAME}"',1)
-    manifest.write_text(mt)
-
+    configure_visibility(root)
     removed,files=flatten_distributed_checks(root)
-    replace_helper_with_minimal_boolean(root,rid)
+    replace_helper_with_minimal_boolean(root)
     add_one_appwide_gate(root)
 
+    manifest=root/'AndroidManifest.xml'; mt=manifest.read_text()
     gms=list(root.glob('smali*/com/google/android/gms/**/*.smali'))
     if gms: raise RuntimeError('GMS classes remain: '+str([str(x.relative_to(root)) for x in gms[:10]]))
 
@@ -130,19 +122,22 @@ def main():
             except Exception: continue
             c=txt.count(COMPANION)
             if c: literal_hits.append((str(p.relative_to(root)),c))
-    manifest_count=manifest.read_text(errors='ignore').count(COMPANION)
+    manifest_count=mt.count(COMPANION)
     total=sum(c for _,c in literal_hits)+manifest_count
-    if total!=1 or literal_hits!=[('res/values/strings.xml',1)] or manifest_count!=0:
+    if total!=1 or literal_hits!=[('smali/dw/filemanager/core/Companion.smali',1)] or manifest_count!=0:
         raise RuntimeError(f'exactly one companion package literal required total; total={total}, hits={literal_hits}, manifest={manifest_count}')
     if helper_calls != [('smali/dw/filemanager/DWApplication.smali',1)]:
         raise RuntimeError('Companion.present must have exactly one caller, DWApplication.onCreate: '+str(helper_calls))
     if legacy: raise RuntimeError('legacy companion/state checks remain: '+str(legacy[:20]))
+    if mt.count(QUERY_PERMISSION)!=1:
+        raise RuntimeError('QUERY_ALL_PACKAGES visibility permission must exist exactly once')
 
     h=(root/'smali/dw/filemanager/core/Companion.smali').read_text()
-    banned=('MessageDigest','Base64','signatures','versionCode','installer','SharedPreferences','Broadcast','http://','https://')
+    banned=('MessageDigest','Base64','signatures','versionCode','installer','SharedPreferences','Broadcast','http://','https://','getInstalledPackages','getInstalledApplications','queryIntentActivities')
     bad=[x for x in banned if x in h]
     if bad: raise RuntimeError('minimal companion helper contains forbidden logic: '+str(bad))
     if h.count('getPackageInfo(Ljava/lang/String;I)')!=1: raise RuntimeError('minimal helper must perform exactly one package lookup')
+    if h.count('const-string v1, "'+COMPANION+'"')!=1: raise RuntimeError('minimal helper must contain sole package literal exactly once')
 
     fx=[]
     for base in (root/'smali',root/'res',root/'assets'):
@@ -160,6 +155,6 @@ def main():
 
     print(f'stage10b release identity frozen: {PACKAGE} vc={VERSION_CODE} vn={VERSION_NAME} target={TARGET_SDK}')
     print(f'stage10b removed {removed} distributed companion checks across {files} files')
-    print('stage10b FINAL companion design: ONE app-wide caller; helper does ONE package-name lookup only; ONE package-name literal total')
+    print('stage10b FINAL companion design: ONE app-wide caller; ONE getPackageInfo(name,0); ONE package literal total; NO other companion logic')
 
 if __name__=='__main__': main()
