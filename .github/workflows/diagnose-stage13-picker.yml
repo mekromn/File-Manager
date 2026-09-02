@@ -1,0 +1,74 @@
+name: Diagnose Stage13 picker sorting
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [stage13-picker-sorting]
+    paths:
+      - '.github/workflows/diagnose-stage13-picker.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Decode v9109005 baseline and locate picker implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 4 --retry-all-errors -o fx.apk 'https://d.apkpure.net/b/APK/nextapp.fx?version=latest'
+          echo '19af15780d0fc65242ed3f97d6397adfbb0055225cef84ccbc2c777b906bf2c6  fx.apk' | sha256sum -c -
+          curl -fL --retry 4 --retry-all-errors -o apktool.jar 'https://github.com/iBotPeaches/Apktool/releases/download/v3.0.3/apktool_3.0.3.jar'
+          echo 'dbf930b076c6b9be08d57c449cacefc3bdd6b71ebd59b3066fc0e1f5b14f9423  apktool.jar' | sha256sum -c -
+          java -jar apktool.jar d -f fx.apk -o decoded
+          while IFS= read -r stage; do python3 "$stage" decoded; done < <(find tools/stages -maxdepth 1 -type f -name 'stage*.py' -print | LC_ALL=C sort)
+          mkdir -p diag/full
+          python3 - <<'PY'
+          from pathlib import Path
+          import re, shutil
+          root=Path('decoded')
+          strings=(root/'res/values/strings.xml').read_text(errors='ignore')
+          public=(root/'res/values/public.xml').read_text(errors='ignore')
+          names=['chooser_activity_name','chooser_title','action_hide_show_hidden','action_sort_name','action_sort_date','action_sort_kind','action_sort_size','action_folder_sort_save']
+          ids={}
+          for name in names:
+              m=re.search(r'<public\s+type="string"\s+name="'+re.escape(name)+r'"\s+id="([^"]+)"',public)
+              if m: ids[name]=m.group(1).lower()
+          Path('diag/ids.txt').write_text('\n'.join(f'{k}={v}' for k,v in ids.items())+'\n')
+          mf=(root/'AndroidManifest.xml').read_text(errors='ignore')
+          Path('diag/manifest-picker.txt').write_text('\n'.join(l for l in mf.splitlines() if 'chooser' in l.lower() or 'picker' in l.lower())+'\n')
+
+          candidates=[]
+          for sd in root.glob('smali*'):
+              for p in sd.rglob('*.smali'):
+                  t=p.read_text(errors='ignore')
+                  low=t.lower()
+                  hit=[]
+                  for name,rid in ids.items():
+                      if rid in low or name in t: hit.append(name)
+                  if 'Llf/r;->m(Lyg/r;Lyg/r;I)V' in t: hit.append('lf/r.m caller')
+                  if 'Llf/s;->E2:I' in t and ('action_hide_show_hidden' in t or ids.get('action_hide_show_hidden','') in low): hit.append('picker mode/menu')
+                  if hit:
+                      candidates.append((p,hit))
+          out=[]
+          for p,hit in candidates:
+              out.append(f'===== {p.relative_to(root)} :: {", ".join(hit)} =====\n'+p.read_text(errors='ignore'))
+              dest=Path('diag/full')/(str(p.relative_to(root)).replace('/','__'))
+              shutil.copy2(p,dest)
+          Path('diag/candidates.txt').write_text('\n'.join(out)+'\n')
+          # Capture direct lf/r, lf/s and sort state classes even if not matched above.
+          for rel in ['smali/lf/r.smali','smali/lf/s.smali','smali/kh/p.smali','smali/kh/o.smali','smali/af/k.smali','smali/af/j.smali']:
+              p=root/rel
+              if p.exists(): shutil.copy2(p,Path('diag/full')/(rel.replace('/','__')))
+          print('ids',ids)
+          print('candidate_count',len(candidates))
+          for p,hit in candidates[:80]: print(p.relative_to(root),hit)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stage13-picker-diagnostic
+          path: diag
+          retention-days: 3
