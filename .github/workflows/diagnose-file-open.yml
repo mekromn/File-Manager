@@ -41,13 +41,11 @@ jobs:
             'MimeTypeMap','application/octet-stream','Open with','open with','OPEN_WITH'
           ]
           out=[]
-          candidate_files=[]
           for sd in root.glob('smali*'):
             for p in sd.rglob('*.smali'):
               t=p.read_text(errors='ignore')
               hits=[pat for pat in pats if pat in t]
               if hits:
-                candidate_files.append(p)
                 lines=t.splitlines()
                 out.append(f'===== {p.relative_to(root)} :: {", ".join(hits)} =====')
                 for i,line in enumerate(lines):
@@ -57,28 +55,24 @@ jobs:
                     out.append('---')
           Path('diag/open-dispatch-context.txt').write_text('\n'.join(out)+'\n')
 
-          # Capture the likely central dispatchers whole so Stage12 can patch structurally.
           wanted=[
-            'smali/hf/b0.smali','smali/hf/y0.smali','smali/qe/d.smali',
-            'smali/gf/o.smali','smali/ce/i.smali','smali/af/g.smali',
-            'smali/ze/a.smali','smali/hh/n.smali'
+            'smali/hf/b0.smali','smali/hf/y0.smali','smali/hf/x0.smali','smali/hf/t0.smali',
+            'smali/hf/u0.smali','smali/hf/v0.smali','smali/hf/s0.smali','smali/hf/p0.smali',
+            'smali/qe/d.smali','smali/qe/b.smali','smali/gf/o.smali','smali/ce/i.smali',
+            'smali/af/g.smali','smali/ze/a.smali','smali/hh/n.smali'
           ]
           for rel in wanted:
             p=root/rel
-            if p.exists():
-              dest=Path('diag/full')/(rel.replace('/','__'))
-              shutil.copy2(p,dest)
+            if p.exists(): shutil.copy2(p,Path('diag/full')/(rel.replace('/','__')))
 
-          # Find every call INTO hf/b0 and every construction of that class.
           refs=[]
           for sd in root.glob('smali*'):
             for p in sd.rglob('*.smali'):
               t=p.read_text(errors='ignore')
-              if 'Lhf/b0;' in t:
+              if any(x in t for x in ('Lhf/b0;','Lhf/y0;','Lhf/x0;','Lhf/t0;')):
                 refs.append(f'===== {p.relative_to(root)} =====\n'+t)
-          Path('diag/hf-b0-callers.txt').write_text('\n'.join(refs)+'\n')
+          Path('diag/open-chooser-callers.txt').write_text('\n'.join(refs)+'\n')
 
-          # Resource/menu/string inventory relevant to Open/Open with / file associations.
           rout=[]
           for base in (root/'res', root/'assets'):
             if not base.exists(): continue
@@ -89,11 +83,8 @@ jobs:
               if re.search(r'(?i)open with|open_as|openas|mime|file type|association|always open|default app',t):
                 rout.append(f'===== {p.relative_to(root)} =====\n{t}')
           Path('diag/open-resource-context.txt').write_text('\n'.join(rout)+'\n')
-          print(f'open_dispatch_bytes={Path("diag/open-dispatch-context.txt").stat().st_size}')
-          print(f'open_resource_bytes={Path("diag/open-resource-context.txt").stat().st_size}')
-          print(f'hf_b0_callers_bytes={Path("diag/hf-b0-callers.txt").stat().st_size}')
+          print('captured',len(list(Path('diag/full').glob('*'))),'full smali files')
           PY
-          grep -n -E 'android.intent.action.VIEW|createChooser|setDataAndType|queryIntentActivities|resolveActivity|Open with|open with' diag/open-dispatch-context.txt | head -n 240 || true
       - uses: actions/upload-artifact@v4
         with:
           name: file-open-dispatch-diagnostic
