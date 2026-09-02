@@ -40,7 +40,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p diag/pre diag/post diag/final
+          mkdir -p diag/pre diag/post diag/pre10 diag/final
           files=(
             smali/ab/d.smali smali/l0/h.smali smali/ae/d.smali smali/kf/d.smali
             smali/b9/e.smali smali/k2/p.smali smali/k2/y.smali smali/x/b.smali
@@ -72,18 +72,33 @@ jobs:
           done
           diff -ru diag/pre diag/post > diag/stage09e-shared.diff || true
 
-      - name: Replay remainder and collect final crash-path evidence
+      - name: Replay through Stage 10a and capture all companion call contexts
         shell: bash
         run: |
           set -euo pipefail
-          for stage in $(find tools/stages -maxdepth 1 -type f -name 'stage*.py' -print | LC_ALL=C sort); do
-            b="$(basename "$stage")"
-            case "$b" in
-              stage0[1-8]*|stage09[abcd]_*) continue ;;
-              stage09e_*) continue ;;
-            esac
-            python3 "$stage" decoded
-          done
+          python3 tools/stages/stage09f_dwconfig.py decoded
+          python3 tools/stages/stage09g_final_wording.py decoded
+          python3 tools/stages/stage10a_network_inventory.py decoded
+          python3 - <<'PY'
+          from pathlib import Path
+          needle='Ldw/filemanager/core/Companion;->present(Landroid/content/Context;)Z'
+          out=[]
+          for p in sorted(Path('decoded').glob('smali*/**/*.smali')):
+              lines=p.read_text(errors='ignore').splitlines()
+              for i,line in enumerate(lines):
+                  if needle in line:
+                      out.append(f'===== {p.relative_to("decoded")}:{i+1} =====')
+                      out.extend(f'{j+1:06d}: {lines[j]}' for j in range(max(0,i-20),min(len(lines),i+26)))
+                      out.append('')
+          Path('diag/pre10/companion-call-contexts.txt').write_text('\n'.join(out))
+          print('captured', sum(1 for x in out if x.startswith('=====')), 'companion call sites')
+          PY
+
+      - name: Apply Stage 10b and collect final crash-path evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/stages/stage10b_release_identity.py decoded
           cp decoded/AndroidManifest.xml diag/final/AndroidManifest.xml
           cp decoded/res/values/strings.xml diag/final/strings.xml
           cp decoded/res/values/public.xml diag/final/public.xml
