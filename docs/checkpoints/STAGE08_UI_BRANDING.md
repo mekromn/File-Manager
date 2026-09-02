@@ -27,7 +27,7 @@ Applied across Android resources/locales:
 - `item_about_fx`, `item_fx_connect`, `item_fx_textedit` migrated to neutral DW resource names while preserving their public numeric IDs;
 - branded drawable/mipmap identifiers migrated at their existing public IDs (`i144/i288`, root/TextEdit variants, splash and logo);
 - no resource filename containing an FX/NextApp brand token remains;
-- `.fxconfig` remains intentionally unchanged as an existing configuration-file compatibility format, not branding.
+- at the historical Stage 08 checkpoint, `.fxconfig` was intentionally left unchanged for compatibility. This is superseded by Stage 09d, which migrates the format token/extension to `.dwconfig` at the user's request.
 
 ## New DW icon family
 
@@ -69,8 +69,8 @@ Structural/UI assertions:
 - exactly two `nextapp.fx.rk` occurrences remain: the pure companion helper and Android package-visibility query;
 - four JNI bridge libraries remain migrated to `Java_dw_filemanager_NativeFileAccess_*`.
 
-## Explicit unresolved boundary
+## Explicit unresolved boundary at Stage 08
 
-Two executable literals for `https://android.nextapp.com/_boxredirect` remain in the legacy Box OAuth flow. Box requires redirect URI compatibility with the server-side OAuth app registration; changing this blindly would break Box authentication. This remains an explicit final-release blocker to solve/test separately and is not accepted as DW branding.
+Two executable literals for `https://android.nextapp.com/_boxredirect` remained in the legacy Box OAuth flow at this checkpoint. Stage 09b later removes this vendor redirect literal and switches callback acceptance to validated `state` + `code`; real-device Box sign-in remains a regression-test requirement.
 
-Stage 08 does not claim final signing, Box OAuth resolution, final orphan pruning, or device regression testing.
+Stage 08 does not claim final signing, final orphan pruning, or device regression testing.
