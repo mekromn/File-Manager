@@ -18,9 +18,8 @@ VISIBLE_REPLACEMENTS={
 def main():
     ap=argparse.ArgumentParser(); ap.add_argument('decoded',type=Path); a=ap.parse_args(); root=a.decoded
 
-    # The dynamic icon slot names are internal compatibility keys, but their images must
-    # never render legacy FX artwork. Match complete XML attribute values so root/non-root
-    # names cannot collide by substring.
+    # The dynamic icon slot names are internal compatibility keys, but every reference
+    # to the old FX-derived artwork must render the DW launcher artwork instead.
     iconset=root/'res/xml/iconset_dynamic_ext.xml'
     t=iconset.read_text()
     tokens=(
@@ -32,8 +31,11 @@ def main():
     changed_icons=0
     for old in tokens:
         c=t.count(old)
-        if c!=1: raise RuntimeError(f'expected exactly one exact XML token {old}, got {c}')
-        t=t.replace(old,'value="@mipmap/ic_launcher_app"',1); changed_icons+=1
+        if c<1: raise RuntimeError(f'expected at least one exact XML token {old}, got {c}')
+        t=t.replace(old,'value="@mipmap/ic_launcher_app"')
+        changed_icons+=c
+    if any(old in t for old in tokens):
+        raise RuntimeError('legacy DW/FX-derived icon artwork link remains after replacement')
     iconset.write_text(t)
 
     # Replace user-facing FX wording anywhere in executable/resource text, regardless of
