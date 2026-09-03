@@ -152,15 +152,10 @@ def patch_icon_chooser(smali_path):
     alarm=t.find('    const-string v1, "folder_alarm"', start)
     if start < 0 or alarm < 0:
         raise RuntimeError('kc/a initial folder palette anchors missing')
-    block=[]
-    for name,_,_,_,_ in PALETTE:
-        key='folder' if name == 'plain' else f'folder_c_{name}'
-        block += [f'    const-string v1, "{key}"', '', '    invoke-virtual {v0, v1}, Ljava/util/ArrayList;->add(Ljava/lang/Object;)Z', '']
     # Keep Plain first in the chooser, then the same palette order as Theme.
     # PALETTE is Theme order with Plain last, so explicitly reorder chooser entries.
     chooser=['plain']+[p[0] for p in PALETTE if p[0] != 'plain']
     block=[]
-    byname={p[0]:p for p in PALETTE}
     for name in chooser:
         key='folder' if name == 'plain' else f'folder_c_{name}'
         block += [f'    const-string v1, "{key}"', '', '    invoke-virtual {v0, v1}, Ljava/util/ArrayList;->add(Ljava/lang/Object;)Z', '']
@@ -173,9 +168,12 @@ def main():
     repo=Path(__file__).resolve().parents[2]
 
     # Original DW light/dark luminance bases generated from DW's own tintbase geometry.
+    # aapt2 37.0.0 reproducibly crashes while crunching the 288px Dark Blue PNG, so
+    # the canonical 288px Dark Blue asset is lossless WebP with the same resource
+    # basename. XML continues to reference @drawable/id288_folder_dw_dark_blue.
     asset=repo/'assets/folder-palette'
     dst=res/'drawable-nodpi'; dst.mkdir(parents=True,exist_ok=True)
-    for name in ('id144_folder_dw_dark_blue.png','id288_folder_dw_dark_blue.png','id144_folder_dw_white.png','id288_folder_dw_white.png'):
+    for name in ('id144_folder_dw_dark_blue.png','id288_folder_dw_dark_blue.webp','id144_folder_dw_white.png','id288_folder_dw_white.png'):
         src=asset/name
         if not src.exists(): raise RuntimeError('missing Stage19 asset '+str(src))
         shutil.copy2(src,dst/name)
@@ -268,7 +266,7 @@ def main():
         if f'"{alias}"' not in kct: raise RuntimeError('Select Icon alias missing '+alias)
     for p in ('iconset_dynamic_aqua.xml','iconset_dynamic_dark_blue.xml','iconset_dynamic_gray.xml','iconset_dynamic_yellow.xml','iconset_dynamic_orange.xml','iconset_dynamic_red.xml','iconset_dynamic_pink.xml','iconset_dynamic_violet.xml','iconset_dynamic_white.xml','iconset_dynamic_colorfolders.xml'):
         if not (xml/p).exists(): raise RuntimeError('generated iconset missing '+p)
-    for p in ('id144_folder_dw_dark_blue.png','id288_folder_dw_dark_blue.png','id144_folder_dw_white.png','id288_folder_dw_white.png'):
+    for p in ('id144_folder_dw_dark_blue.png','id288_folder_dw_dark_blue.webp','id144_folder_dw_white.png','id288_folder_dw_white.png'):
         if not (dst/p).exists(): raise RuntimeError('generated folder base missing '+p)
 
     print('stage19a expanded original DW folder palette in Theme + Select Icon; no Apple-derived assets; vc='+VC)
