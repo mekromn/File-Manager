@@ -1,0 +1,89 @@
+name: Diagnose Stage20 chooser theme/home
+
+on:
+  push:
+    branches: [stage20-picker-stage19-reconcile]
+    paths:
+      - '.github/workflows/diagnose-stage20-chooser-theme-home.yml'
+      - 'tools/stages/stage13*.py'
+      - 'tools/stages/stage20*.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Decode and replay current branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 4 --retry-all-errors -o fx.apk 'https://d.apkpure.net/b/APK/nextapp.fx?version=latest'
+          echo '19af15780d0fc65242ed3f97d6397adfbb0055225cef84ccbc2c777b906bf2c6  fx.apk' | sha256sum -c -
+          curl -fL --retry 4 --retry-all-errors -o apktool.jar 'https://github.com/iBotPeaches/Apktool/releases/download/v3.0.3/apktool_3.0.3.jar'
+          echo 'dbf930b076c6b9be08d57c449cacefc3bdd6b71ebd59b3066fc0e1f5b14f9423  apktool.jar' | sha256sum -c -
+          java -jar apktool.jar d -f fx.apk -o decoded
+          while IFS= read -r stage; do python3 "$stage" decoded; done < <(find tools/stages -maxdepth 1 -type f -name 'stage*.py' -print | LC_ALL=C sort)
+
+      - name: Capture native home/menu implementation and chooser
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p diag/full
+          python3 - <<'PY'
+          from pathlib import Path
+          import re, shutil
+          root=Path('decoded'); sm=root/'smali'; res=root/'res'
+          strings=(res/'values/strings.xml').read_text(errors='ignore')
+          public=(res/'values/public.xml').read_text(errors='ignore')
+          wanted_text=['BOOKMARKS','FILES','Main Storage','System','Documents','Download','DISPLAY AS','SORT BY','Name','Date','Kind','Size']
+          names={}
+          for m in re.finditer(r'<string\s+name="([^"]+)"[^>]*>(.*?)</string>', strings, re.S):
+              txt=re.sub(r'<.*?>','',m.group(2)).strip()
+              if txt in wanted_text or any(w.lower() == txt.lower() for w in wanted_text):
+                  names[m.group(1)]=txt
+          ids={}
+          for name,txt in names.items():
+              m=re.search(r'<public\s+type="string"\s+name="'+re.escape(name)+r'"\s+id="([^"]+)"', public)
+              if m: ids[name]=(m.group(1).lower(),txt)
+          Path('diag/string-ids.txt').write_text('\n'.join(f'{k}={rid} :: {txt}' for k,(rid,txt) in ids.items())+'\n')
+
+          needles=[rid for rid,_ in ids.values()] + list(ids.keys()) + ['action_sort_name','action_calendar','action_kind','action_size','Laf/k;','Lyg/q;','Lyg/r;']
+          hits=[]
+          for p in sm.rglob('*.smali'):
+              t=p.read_text(errors='ignore')
+              matched=[n for n in needles if n in t]
+              if matched:
+                  hits.append((p,matched))
+          out=[]
+          for p,matched in hits:
+              rel=p.relative_to(root)
+              out.append(f'===== {rel} :: {", ".join(matched[:20])} =====\n{p.read_text(errors="ignore")}')
+              try: shutil.copy2(p, Path('diag/full')/(str(rel).replace('/','__')))
+              except Exception: pass
+          Path('diag/hits.txt').write_text('\n\n'.join(out)+'\n')
+
+          explicit=[
+            'smali/dw/filemanager/ui/filechooser/ChooserActivity.smali',
+            'smali/dw/filemanager/ui/filechooser/PickerPanelMenu.smali',
+            'smali/dw/filemanager/ui/filechooser/PickerSortMenu.smali',
+            'smali/dw/filemanager/ui/filechooser/PickerPanel.smali',
+            'smali/eg/g.smali','smali/nf/a.smali','smali/af/k.smali','smali/af/j.smali',
+            'smali/yg/r.smali','smali/yg/q.smali','smali/yg/s.smali','smali/yg/p.smali'
+          ]
+          for rel in explicit:
+              p=root/rel
+              if p.exists(): shutil.copy2(p,Path('diag/full')/(rel.replace('/','__')))
+          print('string ids',ids)
+          print('hit count',len(hits))
+          for p,m in hits[:100]: print(p.relative_to(root),m[:8])
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stage20-chooser-theme-home-diagnostic
+          path: diag
+          retention-days: 3
