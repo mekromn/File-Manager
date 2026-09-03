@@ -31,6 +31,7 @@ jobs:
           BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
           PLATFORM="$(find "$ANDROID_HOME/platforms" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
           mapfile -t JARS < <(find x -name classes.jar -type f | sort)
+          mkdir -p dexout
           "$BT/d8" --lib "$PLATFORM/android.jar" --output dexout "${JARS[@]}"
           cat > AndroidManifest.xml <<'EOF'
           <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="dw.filemanager.shizukuprep">
