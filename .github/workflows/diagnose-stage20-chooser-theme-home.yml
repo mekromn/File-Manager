@@ -62,7 +62,8 @@ jobs:
           needles=[rid for rid,_ in ids.values()] + list(ids.keys()) + [
               'action_sort_name','action_calendar','action_kind','action_size','Laf/k;','Lyg/q;','Lyg/r;',
               'android.provider.DocumentsProvider','DocumentsProvider','ACTION_GET_CONTENT','GET_CONTENT','MANAGE_EXTERNAL_STORAGE',
-              'requestLegacyExternalStorage','android.permission.MANAGE_DOCUMENTS','android.content.action.DOCUMENTS_PROVIDER'
+              'requestLegacyExternalStorage','android.permission.MANAGE_DOCUMENTS','android.content.action.DOCUMENTS_PROVIDER',
+              'Lph/q;','Lph/i;','const-string v0, "su"','const-string p1, "su"','ShizukuBridge','Leg/c;->X1:Lbh/a;'
           ]
           hits=[]
           for p in sm.rglob('*.smali'):
@@ -83,6 +84,10 @@ jobs:
             'smali/dw/filemanager/ui/filechooser/PickerPanelMenu.smali',
             'smali/dw/filemanager/ui/filechooser/PickerSortMenu.smali',
             'smali/dw/filemanager/ui/filechooser/PickerPanel.smali',
+            'smali/dw/filemanager/ui/ExplorerActivity.smali',
+            'smali/dw/filemanager/shizuku/ShizukuBridge.smali',
+            'smali/ph/i.smali','smali/ph/q.smali','smali/ph/m.smali','smali/ph/h.smali',
+            'smali/af/d.smali','smali/eg/c.smali','smali/bh/a.smali',
             'smali/eg/g.smali','smali/nf/a.smali','smali/af/k.smali','smali/af/j.smali',
             'smali/yg/r.smali','smali/yg/q.smali','smali/yg/s.smali','smali/yg/p.smali'
           ]
@@ -91,7 +96,7 @@ jobs:
               if p.exists(): shutil.copy2(p,Path('diag/full')/(rel.replace('/','__')))
           print('string ids',ids)
           print('hit count',len(hits))
-          for p,m in hits[:120]: print(p.relative_to(root),m[:8])
+          for p,m in hits[:200]: print(p.relative_to(root),m[:8])
           PY
 
       - uses: actions/upload-artifact@v4
