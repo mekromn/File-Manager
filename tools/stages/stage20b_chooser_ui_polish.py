@@ -8,35 +8,24 @@ def main():
     ap=argparse.ArgumentParser(); ap.add_argument('decoded',type=Path); a=ap.parse_args()
     root=a.decoded; sm=root/'smali'
 
-    # 1. Theme: chooser content uses same CONTENT surface as the Explorer content.
     p=sm/'dw/filemanager/ui/filechooser/ChooserActivity.smali'
-    t=p.read_text()
-    old='sget-object v3, Lef/f;->X1:Lef/f;'
+    t=p.read_text(); old='sget-object v3, Lef/f;->X1:Lef/f;'
     assert t.count(old)==1, t.count(old)
-    t=t.replace(old,'sget-object v3, Lef/f;->f:Lef/f;',1)
-    p.write_text(t)
+    p.write_text(t.replace(old,'sget-object v3, Lef/f;->f:Lef/f;',1))
 
-    # 2. Sort orientation: insert native column breaks after Name and Kind.
-    p=sm/'dw/filemanager/ui/filechooser/PickerSortMenu.smali'
-    t=p.read_text()
+    p=sm/'dw/filemanager/ui/filechooser/PickerSortMenu.smali'; t=p.read_text()
     break_block='''\n\n    new-instance v0, Lyg/v;\n\n    invoke-direct {v0}, Ljava/lang/Object;-><init>()V\n\n    invoke-virtual {p1, v0}, Lyg/r;->d(Lyg/u;)V'''
-    # Locate the native Date and Size tiles and insert a column break immediately
-    # after the preceding native tile. This tolerates apktool line metadata/spacing.
     for label in ('Date','Size'):
         label_pos=t.find(f'    const-string v2, "{label}"')
         if label_pos < 0: raise RuntimeError('native picker sort tile missing '+label)
         ctor=t.rfind('    new-instance v0, Laf/k;',0,label_pos)
-        if ctor < 0: raise RuntimeError('native picker sort constructor missing before '+label)
         add_line='    invoke-virtual {p1, v0}, Lyg/r;->d(Lyg/u;)V'
         add=t.rfind(add_line,0,ctor)
-        if add < 0: raise RuntimeError('native picker sort add missing before '+label)
-        insert=add+len(add_line)
-        t=t[:insert]+break_block+t[insert:]
+        if ctor < 0 or add < 0: raise RuntimeError('native picker sort structure missing before '+label)
+        insert=add+len(add_line); t=t[:insert]+break_block+t[insert:]
     p.write_text(t)
 
-    # 3. PickerPanel: separate HOME display mode, default Card, and root detection.
-    p=sm/'dw/filemanager/ui/filechooser/PickerPanel.smali'
-    t=p.read_text()
+    p=sm/'dw/filemanager/ui/filechooser/PickerPanel.smali'; t=p.read_text()
     pat=re.compile(r'\n\.method public static toggleFilter\(Ldw/filemanager/ui/filechooser/ChooserActivity;\)V\n.*?\n\.end method\n',re.S)
     t,n=pat.subn('\n',t,count=1); assert n==1
     is_home=r'''
@@ -60,8 +49,7 @@ def main():
         return v0
     .end method
     '''
-    idx=t.index('.method public static viewMode')
-    t=t[:idx]+is_home+'\n'+t[idx:]
+    idx=t.index('.method public static viewMode'); t=t[:idx]+is_home+'\n'+t[idx:]
     pat=re.compile(r'\.method public static setViewMode\(Ldw/filemanager/ui/filechooser/ChooserActivity;Lmb/m;\)V\n.*?\.end method',re.S)
     new_set=r'''.method public static setViewMode(Ldw/filemanager/ui/filechooser/ChooserActivity;Lmb/m;)V
         .locals 4
@@ -110,24 +98,22 @@ def main():
         move-result-object v0
         return-object v0
     .end method'''
-    t,n=pat.subn(new_view,t,count=1); assert n==1
-    p.write_text(t)
+    t,n=pat.subn(new_view,t,count=1); assert n==1; p.write_text(t)
 
-    # 4. Menu: home stops after DISPLAY AS; remove Search and Filter entirely.
-    p=sm/'dw/filemanager/ui/filechooser/PickerPanelMenu.smali'
-    t=p.read_text()
-    start=t.index('    new-instance v1, Ldw/filemanager/ui/filechooser/PickerPanelAction;\n\n    const/4 v2, 0x2', t.index('iput-object v4, p0, Ldw/filemanager/ui/filechooser/ChooserActivity;->m2:Lyg/s;'))
-    end=t.index('    return-void\n.end method', start)
+    p=sm/'dw/filemanager/ui/filechooser/PickerPanelMenu.smali'; t=p.read_text()
+    search_pos=t.find('    const-string v3, "action_search"')
+    if search_pos < 0: raise RuntimeError('picker Search row anchor missing')
+    start=t.rfind('    new-instance v1, Ldw/filemanager/ui/filechooser/PickerPanelAction;',0,search_pos)
+    end=t.find('    return-void\n.end method',search_pos)
+    if start < 0 or end < 0: raise RuntimeError('picker Search/Filter structure missing')
     t=t[:start]+t[end:]
-    needle='''    invoke-virtual {p1, v1}, Lyg/r;->d(Lyg/u;)V\n\n    invoke-static {p0, p1}, Ldw/filemanager/ui/filechooser/PickerSortMenu;->add'''
-    assert t.count(needle)==1
-    repl='''    invoke-virtual {p1, v1}, Lyg/r;->d(Lyg/u;)V\n\n    invoke-static {p0}, Ldw/filemanager/ui/filechooser/PickerPanel;->isHome(Landroid/content/Context;)Z\n    move-result v1\n    if-eqz v1, :not_home\n    return-void\n    :not_home\n\n    invoke-static {p0, p1}, Ldw/filemanager/ui/filechooser/PickerSortMenu;->add'''
-    t=t.replace(needle,repl,1)
-    p.write_text(t)
+    sort_hook='    invoke-static {p0, p1}, Ldw/filemanager/ui/filechooser/PickerSortMenu;->add(Ldw/filemanager/ui/filechooser/ChooserActivity;Lyg/r;)V'
+    pos=t.find(sort_hook)
+    if pos < 0: raise RuntimeError('picker native sort hook missing')
+    home_gate='''    invoke-static {p0}, Ldw/filemanager/ui/filechooser/PickerPanel;->isHome(Landroid/content/Context;)Z\n    move-result v1\n    if-eqz v1, :not_home\n    return-void\n    :not_home\n\n'''
+    t=t[:pos]+home_gate+t[pos:]; p.write_text(t)
 
-    # 5. PickerPanelAction only Refresh + SaveForFolder; remove search/filter switches.
-    p=sm/'dw/filemanager/ui/filechooser/PickerPanelAction.smali'
-    t=p.read_text()
+    p=sm/'dw/filemanager/ui/filechooser/PickerPanelAction.smali'; t=p.read_text()
     pat=re.compile(r'\.method public e\(Lyg/c;\)V\n.*?\.end method',re.S)
     new_action=r'''.method public e(Lyg/c;)V
         .locals 2
@@ -148,12 +134,10 @@ def main():
         :done
         return-void
     .end method'''
-    t,n=pat.subn(new_action,t,count=1); assert n==1
-    p.write_text(t)
+    t,n=pat.subn(new_action,t,count=1); assert n==1; p.write_text(t)
     fp=sm/'dw/filemanager/ui/filechooser/PickerFilterListener.smali'
     if fp.exists(): fp.unlink()
 
-    # 6. HOME styler helper.
     helper=r'''.class public final Ldw/filemanager/ui/filechooser/PickerHomeStyler;
     .super Ljava/lang/Object;
     .source "DWPickerHome"
@@ -228,7 +212,6 @@ def main():
         invoke-virtual {p1, v3}, Landroid/view/ViewGroup;->addView(Landroid/view/View;)V
         add-int/lit8 v2, v2, 0x1
         goto :list_loop
-
         :grid
         const/4 v2, 0x0
         :row_loop
@@ -334,7 +317,6 @@ def main():
     '''
     (sm/'dw/filemanager/ui/filechooser/PickerHomeStyler.smali').write_text(helper)
 
-    # 7. Hook root/home construction and per-item geometry in Leg/c.
     p=sm/'eg/c.smali'; t=p.read_text()
     t=t.replace('.method public final onMeasure(II)V\n    .locals 10','.method public final onMeasure(II)V\n    .locals 11',1)
     old='''    iget-boolean v8, p0, Leg/c;->Z1:Z\n\n    .line 84\n    .line 85\n    invoke-direct {v7, v1, v6, v4, v8}, Lff/q;-><init>(Landroid/content/Context;Lff/d;IZ)V'''
@@ -348,18 +330,14 @@ def main():
     assert t.count(old)==1;t=t.replace(old,new,1)
     needle='''    :cond_3\n    invoke-super {p0, p1, p2}, Landroid/widget/ScrollView;->onMeasure(II)V'''
     repl='''    :cond_3\n    invoke-virtual {p0}, Landroid/view/View;->getContext()Landroid/content/Context;\n    move-result-object v0\n    iget-object v2, p0, Leg/c;->i:Landroid/widget/LinearLayout;\n    invoke-static {v0, v2}, Ldw/filemanager/ui/filechooser/PickerHomeStyler;->apply(Landroid/content/Context;Landroid/widget/LinearLayout;)V\n\n    invoke-super {p0, p1, p2}, Landroid/widget/ScrollView;->onMeasure(II)V'''
-    assert t.count(needle)==1;t=t.replace(needle,repl,1)
-    p.write_text(t)
+    assert t.count(needle)==1;t=t.replace(needle,repl,1); p.write_text(t)
 
-    # 8. local catalog tile constructor uses Icon tile geometry on chooser HOME Icon mode.
     p=sm/'hf/o0.smali'; t=p.read_text()
     old='''    const/4 v0, 0x1\n\n    .line 2\n    invoke-direct {p0, p1, v0}, Lxf/c;-><init>(Landroid/content/Context;I)V'''
     new='''    const/4 v0, 0x1\n\n    instance-of v1, p1, Ldw/filemanager/ui/filechooser/ChooserActivity;\n    if-eqz v1, :dw_type_ready\n    invoke-static {p1}, Ldw/filemanager/ui/filechooser/PickerHomeStyler;->itemType(Landroid/content/Context;)I\n    move-result v0\n    :dw_type_ready\n\n    .line 2\n    invoke-direct {p0, p1, v0}, Lxf/c;-><init>(Landroid/content/Context;I)V'''
-    assert t.count(old)==1;t=t.replace(old,new,1)
-    p.write_text(t)
+    assert t.count(old)==1;t=t.replace(old,new,1); p.write_text(t)
 
     y=root/'apktool.yml'; yt=y.read_text(); yt,n=re.subn(r'(versionCode:\s*)[^\n]+',r'\g<1>9109021',yt,count=1); assert n==1; y.write_text(yt)
-
     assert 'action_search' not in (sm/'dw/filemanager/ui/filechooser/PickerPanelMenu.smali').read_text()
     assert 'action_filter' not in (sm/'dw/filemanager/ui/filechooser/PickerPanelMenu.smali').read_text()
     assert (sm/'dw/filemanager/ui/filechooser/PickerSortMenu.smali').read_text().count('new-instance v0, Lyg/v;')==2
