@@ -26,4 +26,3 @@ jobs:
           name: dw-apk-signing-tool
           path: uber-apk-signer-1.3.0.jar
           retention-days: 3
-# stage19 test export trigger
