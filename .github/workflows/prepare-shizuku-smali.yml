@@ -22,6 +22,7 @@ jobs:
             mkdir -p "x/$a"
             (cd "x/$a" && unzip -q "../../$a.aar")
           done
+          sha256sum aidl.aar shared.aar api.aar provider.aar | tee shizuku-aar-sha256.txt
           cp x/provider/AndroidManifest.xml shizuku-provider-manifest.xml
 
       - name: Build minimal APK containing Shizuku classes
@@ -54,4 +55,5 @@ jobs:
             shizuku-provider-manifest.xml
             shizuku-smali-files.txt
             shizuku-class-list.txt
+            shizuku-aar-sha256.txt
           retention-days: 3
