@@ -19,22 +19,26 @@ def main():
     # 2. Sort orientation: insert native column breaks after Name and Kind.
     p=sm/'dw/filemanager/ui/filechooser/PickerSortMenu.smali'
     t=p.read_text()
-    # target the addView immediately before Date and Size constructor blocks
-    for marker in [
-    '''    invoke-virtual {p1, v0}, Lyg/r;->d(Lyg/u;)V\n\n    new-instance v0, Laf/k;\n\n    move-object v1, p0\n\n    const-string v2, "Date"''',
-    '''    invoke-virtual {p1, v0}, Lyg/r;->d(Lyg/u;)V\n\n    new-instance v0, Laf/k;\n\n    move-object v1, p0\n\n    const-string v2, "Size"''']:
-        assert t.count(marker)==1, (marker[-20:],t.count(marker))
-        replacement=marker.split('\n\n    new-instance v0, Laf/k;')[0]+'''\n\n    new-instance v0, Lyg/v;\n\n    invoke-direct {v0}, Ljava/lang/Object;-><init>()V\n\n    invoke-virtual {p1, v0}, Lyg/r;->d(Lyg/u;)V\n\n    new-instance v0, Laf/k;'''+marker.split('\n\n    new-instance v0, Laf/k;',1)[1]
-        t=t.replace(marker,replacement,1)
+    break_block='''\n\n    new-instance v0, Lyg/v;\n\n    invoke-direct {v0}, Ljava/lang/Object;-><init>()V\n\n    invoke-virtual {p1, v0}, Lyg/r;->d(Lyg/u;)V'''
+    # Locate the native Date and Size tiles and insert a column break immediately
+    # after the preceding native tile. This tolerates apktool line metadata/spacing.
+    for label in ('Date','Size'):
+        label_pos=t.find(f'    const-string v2, "{label}"')
+        if label_pos < 0: raise RuntimeError('native picker sort tile missing '+label)
+        ctor=t.rfind('    new-instance v0, Laf/k;',0,label_pos)
+        if ctor < 0: raise RuntimeError('native picker sort constructor missing before '+label)
+        add_line='    invoke-virtual {p1, v0}, Lyg/r;->d(Lyg/u;)V'
+        add=t.rfind(add_line,0,ctor)
+        if add < 0: raise RuntimeError('native picker sort add missing before '+label)
+        insert=add+len(add_line)
+        t=t[:insert]+break_block+t[insert:]
     p.write_text(t)
 
     # 3. PickerPanel: separate HOME display mode, default Card, and root detection.
     p=sm/'dw/filemanager/ui/filechooser/PickerPanel.smali'
     t=p.read_text()
-    # remove toggleFilter method completely
     pat=re.compile(r'\n\.method public static toggleFilter\(Ldw/filemanager/ui/filechooser/ChooserActivity;\)V\n.*?\n\.end method\n',re.S)
     t,n=pat.subn('\n',t,count=1); assert n==1
-    # add isHome before viewMode
     is_home=r'''
     .method public static isHome(Landroid/content/Context;)Z
         .locals 3
@@ -58,7 +62,6 @@ def main():
     '''
     idx=t.index('.method public static viewMode')
     t=t[:idx]+is_home+'\n'+t[idx:]
-    # replace setViewMode method
     pat=re.compile(r'\.method public static setViewMode\(Ldw/filemanager/ui/filechooser/ChooserActivity;Lmb/m;\)V\n.*?\.end method',re.S)
     new_set=r'''.method public static setViewMode(Ldw/filemanager/ui/filechooser/ChooserActivity;Lmb/m;)V
         .locals 4
@@ -85,7 +88,6 @@ def main():
         return-void
     .end method'''
     t,n=pat.subn(new_set,t,count=1); assert n==1
-    # replace viewMode
     pat=re.compile(r'\.method public static viewMode\(Landroid/content/Context;\)Lmb/m;\n.*?\.end method',re.S)
     new_view=r'''.method public static viewMode(Landroid/content/Context;)Lmb/m;
         .locals 4
@@ -114,11 +116,9 @@ def main():
     # 4. Menu: home stops after DISPLAY AS; remove Search and Filter entirely.
     p=sm/'dw/filemanager/ui/filechooser/PickerPanelMenu.smali'
     t=p.read_text()
-    # remove block Search through Filter by anchor after hidden add, before return
     start=t.index('    new-instance v1, Ldw/filemanager/ui/filechooser/PickerPanelAction;\n\n    const/4 v2, 0x2', t.index('iput-object v4, p0, Ldw/filemanager/ui/filechooser/ChooserActivity;->m2:Lyg/s;'))
     end=t.index('    return-void\n.end method', start)
     t=t[:start]+t[end:]
-    # insert home early return after final DISPLAY AS Usage item add, before PickerSortMenu call
     needle='''    invoke-virtual {p1, v1}, Lyg/r;->d(Lyg/u;)V\n\n    invoke-static {p0, p1}, Ldw/filemanager/ui/filechooser/PickerSortMenu;->add'''
     assert t.count(needle)==1
     repl='''    invoke-virtual {p1, v1}, Lyg/r;->d(Lyg/u;)V\n\n    invoke-static {p0}, Ldw/filemanager/ui/filechooser/PickerPanel;->isHome(Landroid/content/Context;)Z\n    move-result v1\n    if-eqz v1, :not_home\n    return-void\n    :not_home\n\n    invoke-static {p0, p1}, Ldw/filemanager/ui/filechooser/PickerSortMenu;->add'''
@@ -150,7 +150,6 @@ def main():
     .end method'''
     t,n=pat.subn(new_action,t,count=1); assert n==1
     p.write_text(t)
-    # delete dead picker filter listener class; stale base bridges remain unreachable but no listener code is bundled
     fp=sm/'dw/filemanager/ui/filechooser/PickerFilterListener.smali'
     if fp.exists(): fp.unlink()
 
