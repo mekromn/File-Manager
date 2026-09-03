@@ -72,11 +72,9 @@ jobs:
           for cls in ('kc/a','dw/filemanager/ui/widget/c0','dw/filemanager/ui/res/ItemIcons','vf/d'):
               p=sm/(cls+'.smali')
               if p.exists(): shutil.copy2(p,Path('diag/full')/(cls.replace('/','__')+'.smali'))
-          # Copy the exact tint base / plain folder bitmaps for possible DW-original static light/dark bases.
           for p in res.rglob('*'):
               if p.is_file() and p.name in ('id144_folder.png','id288_folder.png','id144_folder_tintbase.png','id288_folder_tintbase.png'):
                   shutil.copy2(p,Path('diag/drawables')/p.name)
-          # Capture all dynamic iconset XML, including tint-folder-color include which earlier keyword pass omitted.
           xml=[]
           for p in (res/'xml').glob('iconset_dynamic*.xml'):
               xml.append(f'===== {p.relative_to(root)} =====\n'+p.read_text(errors='ignore'))
@@ -92,3 +90,4 @@ jobs:
           name: stage19-folder-palette-diagnostic
           path: diag
           retention-days: 3
+# rerun current capture 2026-09-03
