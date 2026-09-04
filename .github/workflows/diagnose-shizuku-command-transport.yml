@@ -28,12 +28,14 @@ jobs:
           while IFS= read -r stage; do python3 "$stage" decoded; done < <(find tools/stages -maxdepth 1 -type f -name 'stage*.py' -print | LC_ALL=C sort)
           mkdir -p diag
           for rel in \
-            smali/ph/i.smali smali/ph/g.smali smali/ph/r.smali smali/ph/q.smali \
+            smali/ph/i.smali smali/ph/g.smali smali/ph/n.smali smali/ph/r.smali smali/ph/q.smali \
+            smali/af/f.smali smali/te/a.smali smali/te/b.smali \
+            smali/dw/filemanager/NativeFileAccess.smali \
             smali/nextapp/xf/shell/PipeFactory.smali smali/dw/filemanager/xf/shell/PipeFactory.smali \
-            smali/te/a.smali smali/dw/filemanager/shizuku/ShizukuBridge.smali; do
+            smali/dw/filemanager/shizuku/ShizukuBridge.smali; do
             if [ -f "decoded/$rel" ]; then cp "decoded/$rel" "diag/$(echo "$rel" | tr '/' '_')"; fi
           done
-          grep -R -n -E 'PipeFactory|readLine|write\(|flush|busyboxPath|newProcess|waitFor|STDOUT|redirectErrorStream' decoded/smali/ph decoded/smali/te decoded/smali/dw/filemanager/shizuku > diag/grep.txt || true
+          grep -R -n -E 'PipeFactory|NativeFileAccess|readLine|write\(|flush|busyboxPath|newProcess|waitFor|STDOUT|redirectErrorStream|Lph/i;->c|Lph/i;->d|Lph/i;->f' decoded/smali/ph decoded/smali/te decoded/smali/af decoded/smali/dw/filemanager > diag/grep.txt || true
       - uses: actions/upload-artifact@v4
         with:
           name: shizuku-command-transport
