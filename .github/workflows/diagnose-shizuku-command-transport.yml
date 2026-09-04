@@ -1,0 +1,41 @@
+name: Diagnose Shizuku command transport
+
+on:
+  push:
+    branches: [stage20-picker-stage19-reconcile]
+    paths:
+      - '.github/workflows/diagnose-shizuku-command-transport.yml'
+      - 'tools/stages/stage21*.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Decode, replay, capture shell transport
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 4 --retry-all-errors -o fx.apk 'https://d.apkpure.net/b/APK/nextapp.fx?version=latest'
+          echo '19af15780d0fc65242ed3f97d6397adfbb0055225cef84ccbc2c777b906bf2c6  fx.apk' | sha256sum -c -
+          curl -fL --retry 4 --retry-all-errors -o apktool.jar 'https://github.com/iBotPeaches/Apktool/releases/download/v3.0.3/apktool_3.0.3.jar'
+          echo 'dbf930b076c6b9be08d57c449cacefc3bdd6b71ebd59b3066fc0e1f5b14f9423  apktool.jar' | sha256sum -c -
+          java -jar apktool.jar d -f fx.apk -o decoded
+          while IFS= read -r stage; do python3 "$stage" decoded; done < <(find tools/stages -maxdepth 1 -type f -name 'stage*.py' -print | LC_ALL=C sort)
+          mkdir -p diag
+          for rel in \
+            smali/ph/i.smali smali/ph/g.smali smali/ph/r.smali smali/ph/q.smali \
+            smali/nextapp/xf/shell/PipeFactory.smali smali/dw/filemanager/xf/shell/PipeFactory.smali \
+            smali/te/a.smali smali/dw/filemanager/shizuku/ShizukuBridge.smali; do
+            if [ -f "decoded/$rel" ]; then cp "decoded/$rel" "diag/$(echo "$rel" | tr '/' '_')"; fi
+          done
+          grep -R -n -E 'PipeFactory|readLine|write\(|flush|busyboxPath|newProcess|waitFor|STDOUT|redirectErrorStream' decoded/smali/ph decoded/smali/te decoded/smali/dw/filemanager/shizuku > diag/grep.txt || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shizuku-command-transport
+          path: diag
+          retention-days: 3
