@@ -16,28 +16,57 @@ def main():
     ap=argparse.ArgumentParser(); ap.add_argument('decoded',type=Path); a=ap.parse_args()
     root=a.decoded; sm=root/'smali'
 
-    # Stage21h puts Shizuku directly into DW's directory list/stat implementation.
-    # What remained wrong in 9109031 was session capability recognition: the
-    # ROOT_* session still attempted startShell() and, if that bootstrap failed,
-    # fell through to ProcessBuilder("su").  That is exactly the behavior seen on
-    # device: the direct Shizuku self-test succeeds while the System catalog says
-    # internal/no-root error.
-    #
-    # Authorized Shizuku is now sufficient to mark a ROOT_* session as Shizuku.
-    # A harmless local /system/bin/sh only satisfies inherited stream fields.
-    # Privileged command/list/stat execution uses the explicit Shizuku branches
-    # installed by stages 21d/21h; no su probe is performed in this path.
+    # 9109031's actual defect is session capability recognition, not Shizuku
+    # itself and not the manifest. The self-test proves one-shot Shizuku shell
+    # commands work. ph/i still required startShell() to succeed before setting
+    # shizuku=true; otherwise it fell through to ProcessBuilder("su"). Replace
+    # that bootstrap independent of line-number/blank-line formatting.
     ip=sm/'ph/i.smali'; t=ip.read_text()
     sig='.method public constructor <init>(Landroid/content/Context;Lph/q;)V'
     s,e,m=method(t,sig)
-    old='''    invoke-static {p1}, Ldw/filemanager/shizuku/ShizukuBridge;->startShell(Landroid/content/Context;)Ljava/lang/Process;\n\n    move-result-object v2\n\n    if-eqz v2, :cond_0\n\n    iput-object v2, p0, Lph/i;->a:Ljava/lang/Process;\n\n    const/4 v5, 0x1\n\n    iput-boolean v5, p0, Lph/i;->shizuku:Z\n\n    goto :goto_1\n'''
-    new='''    invoke-static {}, Ldw/filemanager/shizuku/ShizukuBridge;->isAuthorized()Z\n\n    move-result v2\n\n    if-eqz v2, :cond_0\n\n    :try_start_dw_shizuku_session\n    invoke-static {}, Ljava/lang/Runtime;->getRuntime()Ljava/lang/Runtime;\n\n    move-result-object v2\n\n    const-string v3, "/system/bin/sh"\n\n    invoke-virtual {v2, v3}, Ljava/lang/Runtime;->exec(Ljava/lang/String;)Ljava/lang/Process;\n\n    move-result-object v2\n\n    iput-object v2, p0, Lph/i;->a:Ljava/lang/Process;\n\n    const/4 v5, 0x1\n\n    iput-boolean v5, p0, Lph/i;->shizuku:Z\n    :try_end_dw_shizuku_session\n    .catch Ljava/io/IOException; {:try_start_dw_shizuku_session .. :try_end_dw_shizuku_session} :catch_0\n\n    goto :goto_1\n'''
-    if m.count(old)!=1: raise RuntimeError('ph/i Shizuku bootstrap anchor changed: '+str(m.count(old)))
-    m=m.replace(old,new,1); t=t[:s]+m+t[e:]; ip.write_text(t)
+    pat=re.compile(
+        r'\s*invoke-static \{p1\}, Ldw/filemanager/shizuku/ShizukuBridge;->startShell\(Landroid/content/Context;\)Ljava/lang/Process;\s*'
+        r'move-result-object v2\s*'
+        r'if-eqz v2, :cond_0\s*'
+        r'iput-object v2, p0, Lph/i;->a:Ljava/lang/Process;\s*'
+        r'const/4 v5, 0x1\s*'
+        r'iput-boolean v5, p0, Lph/i;->shizuku:Z\s*'
+        r'goto :goto_1\s*', re.S)
+    new='''
+    invoke-static {}, Ldw/filemanager/shizuku/ShizukuBridge;->isAuthorized()Z
 
-    # Restore ShellCatalog.l() to DW's normal pooled SessionManager lifecycle.
-    # The pooled root connection is now itself Shizuku-aware, so we do not need
-    # the ad-hoc parallel hc/f connection introduced in 9109031.
+    move-result v2
+
+    if-eqz v2, :cond_0
+
+    :try_start_dw_shizuku_session
+    invoke-static {}, Ljava/lang/Runtime;->getRuntime()Ljava/lang/Runtime;
+
+    move-result-object v2
+
+    const-string v3, "/system/bin/sh"
+
+    invoke-virtual {v2, v3}, Ljava/lang/Runtime;->exec(Ljava/lang/String;)Ljava/lang/Process;
+
+    move-result-object v2
+
+    iput-object v2, p0, Lph/i;->a:Ljava/lang/Process;
+
+    const/4 v5, 0x1
+
+    iput-boolean v5, p0, Lph/i;->shizuku:Z
+    :try_end_dw_shizuku_session
+    .catch Ljava/io/IOException; {:try_start_dw_shizuku_session .. :try_end_dw_shizuku_session} :catch_0
+
+    goto :goto_1
+'''
+    m,n=pat.subn(new,m,count=1)
+    if n!=1: raise RuntimeError('ph/i Shizuku bootstrap regex match count: '+str(n))
+    t=t[:s]+m+t[e:]; ip.write_text(t)
+
+    # Use DW's ordinary pooled root SessionManager. The ph/i instance held by the
+    # managed hc/f session is now Shizuku-aware, so there is no parallel ad-hoc
+    # connection model. Genuine root/su continues through the same lifecycle.
     sp=sm/'dw/filemanager/dirimpl/shell/ShellCatalog.smali'; st=sp.read_text()
     sig='.method public static l(Landroid/content/Context;)Lhc/f;'
     s,e,m=method(st,sig)
@@ -105,8 +134,6 @@ def main():
 .end method'''
     st=st[:s]+restored+st[e:]; sp.write_text(st)
 
-    # Clarify the legacy diagnostic label. Failure here only means no UID-0 su;
-    # it says nothing about an authorized Shizuku shell session.
     strings=root/'res/values/strings.xml'; x=strings.read_text()
     x=x.replace('<string name="root_diag_test_result">Legacy su Root Shell Test</string>',
                 '<string name="root_diag_test_result">Legacy UID-0 Root Test (Shizuku is separate)</string>')
@@ -117,13 +144,13 @@ def main():
     if n!=1: raise RuntimeError('versionCode missing')
     y.write_text(yt)
 
-    ft=ip.read_text(); fs=sp.read_text()
+    ft=ip.read_text(); fs=sp.read_text(); ctor=method(ft,sig='.method public constructor <init>(Landroid/content/Context;Lph/q;)V')[2]
     for tok in ('ShizukuBridge;->isAuthorized()Z','Runtime;->exec(Ljava/lang/String;)Ljava/lang/Process;','shizuku:Z'):
-        if tok not in ft: raise RuntimeError('Shizuku session capability patch missing '+tok)
-    if 'ShizukuBridge;->startShell(Landroid/content/Context;)Ljava/lang/Process;' in method(ft,'.method public constructor <init>(Landroid/content/Context;Lph/q;)V')[2]:
+        if tok not in ctor: raise RuntimeError('Shizuku session capability patch missing '+tok)
+    if 'ShizukuBridge;->startShell(Landroid/content/Context;)Ljava/lang/Process;' in ctor:
         raise RuntimeError('ROOT_* constructor still depends on startShell')
     if 'SessionManager;->a(Landroid/content/Context;Ljh/c;)Ljh/a;' not in fs:
         raise RuntimeError('ShellCatalog SessionManager lifecycle not restored')
-    print('stage21i: ROOT_* sessions now recognize authorized Shizuku directly; no Shizuku->su bootstrap; vc='+VC)
+    print('stage21i: ROOT_* sessions recognize authorized Shizuku directly; no Shizuku->su bootstrap; vc='+VC)
 
 if __name__=='__main__': main()
