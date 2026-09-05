@@ -62,6 +62,43 @@ jobs:
             python3 "$stage" decoded
           done < <(find tools/stages -maxdepth 1 -type f -name 'stage*.py' -print | LC_ALL=C sort)
 
+      - name: Capture temporary chooser diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p stage20-diag/full
+          cp decoded/AndroidManifest.xml stage20-diag/AndroidManifest.xml
+          cp decoded/res/values/strings.xml stage20-diag/strings.xml
+          cp decoded/res/values/public.xml stage20-diag/public.xml
+          python3 - <<'PY'
+          from pathlib import Path
+          import re, shutil
+          root=Path('decoded'); sm=root/'smali'; out=Path('stage20-diag')
+          strings=(root/'res/values/strings.xml').read_text(errors='ignore')
+          public=(root/'res/values/public.xml').read_text(errors='ignore')
+          wanted=['BOOKMARKS','FILES','Main Storage','System','Documents','Download','DISPLAY AS','SORT BY','Name','Date','Kind','Size','File Chooser']
+          names={}
+          for m in re.finditer(r'<string\s+name="([^"]+)"[^>]*>(.*?)</string>',strings,re.S):
+            txt=re.sub(r'<.*?>','',m.group(2)).strip()
+            if txt in wanted or any(x.lower()==txt.lower() for x in wanted): names[m.group(1)]=txt
+          ids={}
+          for n,txt in names.items():
+            m=re.search(r'<public\s+type="string"\s+name="'+re.escape(n)+r'"\s+id="([^"]+)"',public)
+            if m: ids[n]=(m.group(1).lower(),txt)
+          (out/'string-ids.txt').write_text('\n'.join(f'{n}={rid} :: {txt}' for n,(rid,txt) in ids.items())+'\n')
+          needles=[rid for rid,_ in ids.values()] + list(ids.keys()) + ['action_sort_name','action_calendar','action_kind','action_size','Laf/k;','Lyg/q;','Lyg/r;','DocumentsProvider','android.provider.DocumentsProvider','android.content.action.DOCUMENTS_PROVIDER','android.intent.action.GET_CONTENT','android.intent.action.OPEN_DOCUMENT','android.intent.action.OPEN_DOCUMENT_TREE','MANAGE_EXTERNAL_STORAGE','MANAGE_DOCUMENTS']
+          hits=[]
+          for p in sm.rglob('*.smali'):
+            t=p.read_text(errors='ignore'); mh=[n for n in needles if n in t]
+            if mh: hits.append(f'===== {p.relative_to(root)} :: {", ".join(mh[:20])} =====\n'+t)
+          (out/'hits.txt').write_text('\n\n'.join(hits)+'\n')
+          explicit=['smali/dw/filemanager/ui/filechooser/ChooserActivity.smali','smali/dw/filemanager/ui/filechooser/PickerPanelMenu.smali','smali/dw/filemanager/ui/filechooser/PickerSortMenu.smali','smali/dw/filemanager/ui/filechooser/PickerPanel.smali','smali/eg/g.smali','smali/nf/a.smali','smali/af/k.smali','smali/af/j.smali','smali/yg/r.smali','smali/yg/q.smali','smali/yg/p.smali','smali/yg/s.smali']
+          for rel in explicit:
+            p=root/rel
+            if p.exists(): shutil.copy2(p,out/'full'/rel.replace('/','__'))
+          print('diagnostic hits',len(hits),'ids',ids)
+          PY
+
       - name: Build unsigned replay APK
         shell: bash
         run: |
@@ -84,4 +121,6 @@ jobs:
             replay-stages.txt
             replay-metrics.txt
             stage10-network-inventory.txt
+            apktool.jar
+            stage20-diag/**
           retention-days: 3

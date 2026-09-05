@@ -1,13 +1,14 @@
 name: Diagnose Stage13 picker widget
 
 on:
-  workflow_dispatch:
-  push:
-    branches: [stage13-picker-sorting]
+  pull_request:
     paths:
       - '.github/workflows/diagnose-stage13-picker-widget.yml'
       - 'tools/stages/stage12d_internal_file_associations.py'
       - 'tools/stages/stage13*.py'
+      - 'tools/stages/stage20*.py'
+      - 'tools/stages/stage21*.py'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -17,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Decode and capture chooser widget sort hooks
+      - name: Decode and capture chooser/home/provider hooks
         shell: bash
         run: |
           set -euo pipefail
@@ -28,13 +29,30 @@ jobs:
           java -jar apktool.jar d -f fx.apk -o decoded
           while IFS= read -r stage; do python3 "$stage" decoded; done < <(find tools/stages -maxdepth 1 -type f -name 'stage*.py' -print | LC_ALL=C sort)
           mkdir -p diag/full
+          cp decoded/AndroidManifest.xml diag/AndroidManifest.xml
+          cp decoded/res/values/strings.xml diag/strings.xml
+          cp decoded/res/values/public.xml diag/public.xml
           python3 - <<'PY'
           from pathlib import Path
           import re, shutil
-          root=Path('decoded'); sm=root/'smali'
-          seeds=['eg/g','nf/a','dw/filemanager/ui/filechooser/ChooserActivity','kh/p','kh/o','hf/j0','hf/g0','be/j','gf/o','af/k','af/j','lf/p','lf/s','lf/r','dw/filemanager/ui/content/k']
+          root=Path('decoded'); sm=root/'smali'; res=root/'res'
+          strings=(res/'values/strings.xml').read_text(errors='ignore')
+          public=(res/'values/public.xml').read_text(errors='ignore')
+          wanted=['BOOKMARKS','FILES','Main Storage','System','Documents','Download','DISPLAY AS','SORT BY','Name','Date','Kind','Size','File Chooser']
+          names={}
+          for m in re.finditer(r'<string\s+name="([^"]+)"[^>]*>(.*?)</string>',strings,re.S):
+            txt=re.sub(r'<.*?>','',m.group(2)).strip()
+            if txt in wanted or any(x.lower()==txt.lower() for x in wanted): names[m.group(1)]=txt
+          ids={}
+          for n,txt in names.items():
+            m=re.search(r'<public\s+type="string"\s+name="'+re.escape(n)+r'"\s+id="([^"]+)"',public)
+            if m: ids[n]=(m.group(1).lower(),txt)
+          Path('diag/string-ids.txt').write_text('\n'.join(f'{n}={rid} :: {txt}' for n,(rid,txt) in ids.items())+'\n')
+
+          seeds=['eg/g','nf/a','dw/filemanager/ui/filechooser/ChooserActivity','kh/p','kh/o','hf/j0','hf/g0','be/j','gf/o','af/k','af/j','lf/p','lf/s','lf/r','dw/filemanager/ui/content/k','yg/r','yg/q','yg/p','yg/s']
           copied=set(); queue=list(seeds)
-          for _ in range(3):
+          prefixes=('eg/','nf/','kh/','hf/','be/','gf/','af/','lf/','yg/','dw/filemanager/')
+          for _ in range(5):
             nextq=[]
             for cls in queue:
               if cls in copied: continue
@@ -44,16 +62,24 @@ jobs:
               t=p.read_text(errors='ignore')
               for ref in re.findall(r'L([A-Za-z0-9_$/]+);',t):
                 if ref.startswith(('java/','android/','androidx/','kotlin/')): continue
-                if ref.startswith(('eg/','nf/','kh/','hf/','be/','gf/','af/','lf/','dw/filemanager/ui/content/')): nextq.append(ref)
+                if ref.startswith(prefixes): nextq.append(ref)
             queue=nextq
+
+          needles=[rid for rid,_ in ids.values()] + list(ids.keys()) + [
+            'action_sort_name','action_calendar','action_kind','action_size','Laf/k;','Lyg/q;','Lyg/r;',
+            'DocumentsProvider','android.provider.DocumentsProvider','android.content.action.DOCUMENTS_PROVIDER',
+            'android.intent.action.GET_CONTENT','android.intent.action.OPEN_DOCUMENT','android.intent.action.OPEN_DOCUMENT_TREE',
+            'MANAGE_EXTERNAL_STORAGE','requestLegacyExternalStorage','MANAGE_DOCUMENTS','ACTION_GET_CONTENT'
+          ]
           hits=[]
           for p in sm.rglob('*.smali'):
             t=p.read_text(errors='ignore')
-            if 'Leg/g;->' in t or 'Lkh/p;->' in t or 'Lkh/o;->' in t or 'Lhf/j0;->' in t:
-              if any(x in t for x in ('Leg/g;->','Lkh/p;->a:Z','Lkh/p;->b:Lkh/o;','Lhf/j0;->','setSort','sort')):
-                hits.append(f'===== {p.relative_to(sm)} =====\n'+t)
-          Path('diag/sort-hits.txt').write_text('\n'.join(hits)+'\n')
+            mh=[n for n in needles if n in t]
+            if mh: hits.append(f'===== {p.relative_to(root)} :: {", ".join(mh[:20])} =====\n'+t)
+          Path('diag/hits.txt').write_text('\n\n'.join(hits)+'\n')
           print('captured',len(copied),sorted(copied))
+          print('ids',ids)
+          print('hits',len(hits))
           PY
       - uses: actions/upload-artifact@v4
         with:

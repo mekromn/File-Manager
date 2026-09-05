@@ -1,0 +1,48 @@
+name: Diagnose DW System filesystem path
+
+on:
+  push:
+    branches: [stage20-picker-stage19-reconcile]
+    paths:
+      - '.github/workflows/diagnose-shizuku-root-path.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Decode immutable base and capture System/root shell graph
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 4 --retry-all-errors -o fx.apk 'https://d.apkpure.net/b/APK/nextapp.fx?version=latest'
+          echo '19af15780d0fc65242ed3f97d6397adfbb0055225cef84ccbc2c777b906bf2c6  fx.apk' | sha256sum -c -
+          curl -fL --retry 4 --retry-all-errors -o apktool.jar 'https://github.com/iBotPeaches/Apktool/releases/download/v3.0.3/apktool_3.0.3.jar'
+          java -jar apktool.jar d -f fx.apk -o decoded
+          mkdir -p diag
+          python3 - <<'PY'
+          from pathlib import Path
+          import shutil,re
+          root=Path('decoded'); sm=root/'smali'; out=Path('diag')
+          explicit=['ph/i','ph/q','ph/m','ph/h','af/d','eg/c','bh/a','bh/b','bh/c','hh/f','dw/filemanager/ui/ExplorerActivity']
+          for cls in explicit:
+            p=sm/(cls+'.smali')
+            if p.exists(): shutil.copy2(p,out/(cls.replace('/','__')+'.smali'))
+          needles=['Lph/q;','Lph/i;','Lbh/a;','Leg/c;->X1','const-string',' su','"su"','getRoot','isRoot','root','Root']
+          hits=[]
+          for p in sm.rglob('*.smali'):
+            t=p.read_text(errors='ignore')
+            if ('Lph/q;' in t or 'Lph/i;' in t or 'Lbh/a;' in t or 'Leg/c;->X1' in t) and any(x in t for x in ('su','root','Root','Lph/q;','Lbh/a;')):
+              hits.append('===== '+str(p.relative_to(root))+' =====\n'+t)
+          (out/'hits.txt').write_text('\n\n'.join(hits))
+          print('hits',len(hits))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dw-system-root-path
+          path: diag
+          retention-days: 3
