@@ -1,0 +1,93 @@
+name: Android runtime filesystem probe
+on:
+  pull_request:
+    paths:
+      - 'tools/runtime_fs_probe.py'
+      - '.github/workflows/runtime-fs-probe.yml'
+      - 'tools/stages/stage21m*'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: dw-replay-unsigned
+          run-id: 33969871182
+          github-token: ${{ github.token }}
+          path: runtime-input
+      - name: Build emulator-only instrumentation
+        run: |
+          python3 tools/runtime_fs_probe.py
+          curl -fL --retry 3 'https://github.com/RikkaApps/Shizuku/releases/download/v13.6.0/shizuku-v13.6.0.r1086.2650830c-release.apk' -o runtime-work/shizuku.apk
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Android 16 real runtime probe
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          profile: pixel_7_pro
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
+          script: |
+            mkdir -p runtime-evidence
+            python3 - <<'PY'
+            import subprocess,time,re,xml.etree.ElementTree as ET
+            from pathlib import Path
+            out=Path('runtime-evidence')
+            def run(*a,timeout=40):
+              p=subprocess.run(a,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=timeout)
+              print(p.stdout,flush=True)
+              return p.stdout
+            run('adb','install','-r','runtime-work/shizuku.apk')
+            run('adb','install','-r','runtime-work/test.apk')
+            run('adb','shell','monkey','-p','moe.shizuku.privileged.api','-c','android.intent.category.LAUNCHER','1')
+            time.sleep(3)
+            pkg=run('adb','shell','dumpsys','package','moe.shizuku.privileged.api')
+            lib=re.search(r'nativeLibraryDir=(\S+)',pkg).group(1)
+            starter=run('adb','shell',lib+'/libshizuku.so',timeout=25)
+            (out/'starter.txt').write_text(starter)
+            time.sleep(3)
+            run('adb','shell','am','start','-n','com.mekromn.dwfilemanager/dw.filemanager.ui.ExplorerActivity')
+            time.sleep(3)
+            log=open(out/'instrumentation.txt','w')
+            p=subprocess.Popen(['adb','shell','am','instrument','-w','com.mekromn.dwfilemanager/dw.filemanager.shizuku.DwFsProbe'],stdout=log,stderr=subprocess.STDOUT)
+            deadline=time.time()+160
+            while p.poll() is None and time.time()<deadline:
+              try:
+                run('adb','shell','uiautomator','dump','/sdcard/window.xml',timeout=12)
+                xml=run('adb','shell','cat','/sdcard/window.xml',timeout=5)
+                (out/'last-ui.xml').write_text(xml)
+                root=ET.fromstring(xml[xml.index('<?xml'):])
+                for node in root.iter('node'):
+                  txt=node.get('text','').strip().lower()
+                  if txt in ('allow all the time','allow','allow only while using the app','allow only while in use'):
+                    b=list(map(int,re.findall(r'\d+',node.get('bounds',''))))
+                    if len(b)==4:run('adb','shell','input','tap',str((b[0]+b[2])//2),str((b[1]+b[3])//2))
+                    break
+              except Exception as e: print('UI polling:',e)
+              time.sleep(2)
+            if p.poll() is None:p.terminate()
+            log.close()
+            (out/'logcat.txt').write_text(run('adb','logcat','-d','-v','threadtime',timeout=20))
+            (out/'probe.txt').write_text(run('adb','shell','run-as','com.mekromn.dwfilemanager','cat','files/runtime-fs-probe.txt'))
+            with open(out/'screen.png','wb') as f:subprocess.run(['adb','exec-out','screencap','-p'],stdout=f,timeout=10)
+            print((out/'instrumentation.txt').read_text())
+            PY
+      - name: Upload runtime evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dw-runtime-fs-probe
+          path: runtime-evidence/
+          retention-days: 5
