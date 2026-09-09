@@ -1,0 +1,59 @@
+name: Prepare Shizuku API smali
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/prepare-shizuku-smali.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Shizuku 13.1.5 AARs
+        shell: bash
+        run: |
+          set -euo pipefail
+          for a in aidl shared api provider; do
+            curl -fL --retry 4 --retry-all-errors -o "$a.aar" "https://repo1.maven.org/maven2/dev/rikka/shizuku/$a/13.1.5/$a-13.1.5.aar"
+            mkdir -p "x/$a"
+            (cd "x/$a" && unzip -q "../../$a.aar")
+          done
+          sha256sum aidl.aar shared.aar api.aar provider.aar | tee shizuku-aar-sha256.txt
+          cp x/provider/AndroidManifest.xml shizuku-provider-manifest.xml
+
+      - name: Build minimal APK containing Shizuku classes
+        shell: bash
+        run: |
+          set -euo pipefail
+          BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          PLATFORM="$(find "$ANDROID_HOME/platforms" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          mapfile -t JARS < <(find x -name classes.jar -type f | sort)
+          mkdir -p dexout
+          "$BT/d8" --lib "$PLATFORM/android.jar" --output dexout "${JARS[@]}"
+          cat > AndroidManifest.xml <<'EOF'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="dw.filemanager.shizukuprep">
+            <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="36"/>
+            <application android:theme="@android:style/Theme.Material.NoActionBar"/>
+          </manifest>
+          EOF
+          "$BT/aapt2" link -o shizuku-prep.apk --manifest AndroidManifest.xml -I "$PLATFORM/android.jar"
+          zip -q -j shizuku-prep.apk dexout/classes.dex
+          curl -fL --retry 4 --retry-all-errors -o apktool.jar 'https://github.com/iBotPeaches/Apktool/releases/download/v3.0.3/apktool_3.0.3.jar'
+          java -jar apktool.jar d -f shizuku-prep.apk -o decoded
+          find decoded -path '*/smali*/*.smali' -type f | sort > shizuku-smali-files.txt
+          grep -R '^\.class' decoded/smali* | head -1000 > shizuku-class-list.txt || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shizuku-13.1.5-smali
+          path: |
+            decoded/smali*/**/*.smali
+            shizuku-provider-manifest.xml
+            shizuku-smali-files.txt
+            shizuku-class-list.txt
+            shizuku-aar-sha256.txt
+          retention-days: 3
