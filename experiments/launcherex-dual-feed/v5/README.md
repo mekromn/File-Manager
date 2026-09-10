@@ -9,18 +9,33 @@ The V4 fallback executed Shizuku `am start --display` from DW's Messenger servic
 ## V5 correction
 
 - Keep LauncherEx V2 unchanged.
-- Keep V4 manifest/`allowEmbedded`/ACTIVITY_EMBEDDING configuration unchanged.
-- Keep zero-flag private VirtualDisplay creation unchanged.
-- Run the Shizuku `am start --display` process and its `waitFor()` on a dedicated daemon worker thread.
-- Arm the five-second `activity_timeout` before either launch path so the UI cannot remain on `Starting...` indefinitely.
+- Keep V4 manifest/`allowEmbedded`/`ACTIVITY_EMBEDDING` configuration unchanged.
+- Keep zero-flag private `VirtualDisplay` creation unchanged.
+- Keep the existing normal `ActivityOptions.setLaunchDisplayId()` attempt unchanged.
+- When that path throws `SecurityException`, start Shizuku `am start --display` but **do not call `Process.waitFor()` on DW's main looper**.
+- The existing five-second `activity_timeout` therefore becomes live immediately after the Shizuku process is started; the feed can no longer remain indefinitely on `Starting...` because the main looper is blocked in `waitFor()`.
 - Leave DW Home and DW Recently Updated page implementations untouched.
 
-## Exact artifact
+This is intentionally smaller than the earlier worker-thread draft: the one-shot shell command is already asynchronous once DW stops waiting for its process. That lets the exact V4 DEX be patched in place with six code units, preserving method size, catch ranges, and downstream offsets.
 
-`DW-File-Manager_9.1.0.8_v9109040_LAUNCHEREX_DUAL_FEED_V5_ASYNC_SHIZUKU_LAUNCH.apk`
+## Exact built artifact
 
-SHA-256: `32b77bca72088b187c4473c22f3af532e98828cfebbe7a712bc3227bb73659d4`
+`DW-File-Manager_9.1.0.8_v9109040_LAUNCHEREX_DUAL_FEED_V5_NONBLOCKING_SHIZUKU_LAUNCH.apk`
 
-V4 → V5 non-signature payload delta: `classes2.dex` only.
+SHA-256: `f714c4b82a396a7210f86d83db8a704fa3b6da0302af19baa8db6e81136b68a8`
 
-Signer and versionCode remain unchanged for in-place installation.
+`classes2.dex` SHA-256: `0dd577791c1aea092eebcaeb25b25cd30b39bcfbe31d810392a2c399fbab0a15`
+
+V4 → V5 ZIP entry-content audit: excluding regenerated v1 signature metadata under `META-INF`, `classes2.dex` is the only payload entry whose content changed. `AndroidManifest.xml` and `classes.dex` remain byte-identical.
+
+The DEX SHA-1 signature and Adler32 checksum were recalculated and verified. The final APK verifies with v1/v2/v3 signatures, zipalign verification, and the permanent DW certificate SHA-256 `a66c6e2f8cdca4dba6bcde92230bf91a162d767df217f09bbbab8194185afdbf`.
+
+Package identity remains unchanged for in-place installation:
+
+- package: `com.mekromn.dwfilemanager`
+- versionCode: `9109040`
+- versionName: `9.1.0.8`
+
+## Device test
+
+Keep LauncherEx V2 installed. Install V5 directly over V4 without uninstalling or clearing data, then test **DW Home** first. The expected result is either the real DW Home page becoming ready, or a precise timeout/error after about five seconds—not an indefinite `Starting DW Home...` state.
