@@ -19,7 +19,7 @@ jobs:
           unzip -q build-tools.zip -d unpack
           dir="$(find unpack -type f -name zipalign -printf '%h\n' | head -n1)"
           test -n "$dir"
-          "$dir/zipalign" -h 2>&1 | head -n 30
+          ("$dir/zipalign" 2>&1 || true) | head -n 30
           mkdir -p out/lib64
           cp "$dir/zipalign" out/
           if [ -f "$dir/lib64/libc++.so" ]; then cp "$dir/lib64/libc++.so" out/lib64/; fi
