@@ -9,6 +9,7 @@ on:
 permissions:
   contents: read
 
+# V7 refresh: regenerate the pinned tool artifact for the LauncherEx/DW manifest patch.
 jobs:
   tools:
     runs-on: ubuntu-latest
