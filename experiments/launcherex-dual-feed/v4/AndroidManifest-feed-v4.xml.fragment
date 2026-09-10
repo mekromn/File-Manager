@@ -1,0 +1,11 @@
+<activity
+    android:name="dw.filemanager.feed.DwFeedActivity"
+    android:exported="true"
+    android:allowEmbedded="true"
+    android:permission="android.permission.ACTIVITY_EMBEDDING"
+    android:excludeFromRecents="true"
+    android:launchMode="standard"
+    android:noHistory="false"
+    android:theme="@style/AppBaseThemeDark.Launcher"
+    android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize"
+    android:windowSoftInputMode="stateHidden" />
