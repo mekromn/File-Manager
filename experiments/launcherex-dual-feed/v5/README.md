@@ -1,41 +1,33 @@
-# LauncherEx × DW dual feed V5
+# LauncherEx × DW dual feed V5 — REJECTED
 
-## Device result driving V5
+V5 removed the blocking `Process.waitFor()` from the Shizuku display-launch fallback, but the device log exposed a lower-level DEX verifier defect before the feed host could execute.
 
-V4 on Pixel 9 Pro XL / Android 16 passed the previous display/permission boundary but remained indefinitely on `Starting DW Home...`.
+## Device result
 
-The V4 fallback executed Shizuku `am start --display` from DW's Messenger service handler and immediately called `Process.waitFor()` on that same main looper. `DwFeedActivity` belongs to the same DW process, so its lifecycle callbacks also require that main looper. This can deadlock the launch command and Activity bootstrap against each other.
+Android 16 repeatedly rejected:
 
-## V5 correction
+`dw.filemanager.feed.DwFeedRegistry.create(...)`
 
-- Keep LauncherEx V2 unchanged.
-- Keep V4 manifest/`allowEmbedded`/`ACTIVITY_EMBEDDING` configuration unchanged.
-- Keep zero-flag private `VirtualDisplay` creation unchanged.
-- Keep the existing normal `ActivityOptions.setLaunchDisplayId()` attempt unchanged.
-- When that path throws `SecurityException`, start Shizuku `am start --display` but **do not call `Process.waitFor()` on DW's main looper**.
-- The existing five-second `activity_timeout` therefore becomes live immediately after the Shizuku process is started; the feed can no longer remain indefinitely on `Starting...` because the main looper is blocked in `waitFor()`.
-- Leave DW Home and DW Recently Updated page implementations untouched.
+with:
 
-This is intentionally smaller than the earlier worker-thread draft: the one-shot shell command is already asynchronous once DW stops waiting for its process. That lets the exact V4 DEX be patched in place with six code units, preserving method size, catch ranges, and downstream offsets.
+`VerifyError ... [0xB3] register v9 has type Reference java.lang.Object but expected Reference: java.lang.String`
 
-## Exact built artifact
+`DwFeedService.onCreate()` therefore could not initialize `DwFeedRegistry`, leaving LauncherEx on `Starting DW Home...`.
+
+## Root cause
+
+`create()` has nine locals, so String parameter `p0` is physical register `v9`. The activity-launch catch handler used `move-exception p0`, retyping that register as `Throwable`. On the SecurityException + successful-Shizuku path it then branches to `:launch_scheduled`, where `p0` is passed to `DwFeedRegistry$$ExternalSyntheticLambda0.<init>(String)`.
+
+The verifier correctly merges the normal-path `String` and catch-path `Throwable` to `Object`, then rejects the constructor call because it requires `String`.
+
+## Artifact retained for traceability
 
 `DW-File-Manager_9.1.0.8_v9109040_LAUNCHEREX_DUAL_FEED_V5_NONBLOCKING_SHIZUKU_LAUNCH.apk`
 
-SHA-256: `f714c4b82a396a7210f86d83db8a704fa3b6da0302af19baa8db6e81136b68a8`
+APK SHA-256: `f714c4b82a396a7210f86d83db8a704fa3b6da0302af19baa8db6e81136b68a8`
 
 `classes2.dex` SHA-256: `0dd577791c1aea092eebcaeb25b25cd30b39bcfbe31d810392a2c399fbab0a15`
 
-V4 → V5 ZIP entry-content audit: excluding regenerated v1 signature metadata under `META-INF`, `classes2.dex` is the only payload entry whose content changed. `AndroidManifest.xml` and `classes.dex` remain byte-identical.
+Package/version/signing identity remained correct, but **V5 is not a valid device candidate** because of this verifier failure.
 
-The DEX SHA-1 signature and Adler32 checksum were recalculated and verified. The final APK verifies with v1/v2/v3 signatures, zipalign verification, and the permanent DW certificate SHA-256 `a66c6e2f8cdca4dba6bcde92230bf91a162d767df217f09bbbab8194185afdbf`.
-
-Package identity remains unchanged for in-place installation:
-
-- package: `com.mekromn.dwfilemanager`
-- versionCode: `9109040`
-- versionName: `9.1.0.8`
-
-## Device test
-
-Keep LauncherEx V2 installed. Install V5 directly over V4 without uninstalling or clearing data, then test **DW Home** first. The expected result is either the real DW Home page becoming ready, or a precise timeout/error after about five seconds—not an indefinite `Starting DW Home...` state.
+The repair continues in V6 by keeping `p0/v9` as the String session id and storing the caught Throwable in local `v0` instead.
