@@ -1,0 +1,35 @@
+name: Prepare Android Build Tools 35
+on:
+  push:
+    paths:
+      - '.github/workflows/prepare-build-tools-v35.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  tools:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Download Android Build Tools 35.0.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 -o build-tools.zip https://dl.google.com/android/repository/build-tools_r35_linux.zip
+          unzip -q build-tools.zip -d unpack
+          dir="$(find unpack -type f -name zipalign -printf '%h\n' | head -n1)"
+          test -n "$dir"
+          "$dir/zipalign" -h 2>&1 | head -n 30
+          mkdir -p out/lib64
+          cp "$dir/zipalign" out/
+          if [ -f "$dir/lib64/libc++.so" ]; then cp "$dir/lib64/libc++.so" out/lib64/; fi
+          if [ -f "$(dirname "$dir")/lib64/libc++.so" ]; then cp "$(dirname "$dir")/lib64/libc++.so" out/lib64/; fi
+          chmod +x out/zipalign
+      - name: Upload zipalign
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-zipalign-35.0.0-linux
+          path: out
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
