@@ -18,12 +18,19 @@ import java.util.Map;
 import dw.filemanager.shizuku.ShizukuBridge;
 import dw.filemanager.ui.ExplorerActivity;
 
-/** V5: private display plus non-blocking Shizuku activity launch. */
+/**
+ * V5 host: create a private virtual display normally. Android 16 may deny a normal app
+ * launching an Activity on an untrusted non-default display; when that specific launch
+ * throws SecurityException, use DW's already-authorized Shizuku shell only to issue
+ * `am start --display`. The Activity/UI and all file operations still belong to DW.
+ */
 final class DwFeedRegistry {
     private static final Handler MAIN=new Handler(Looper.getMainLooper());
     private static final Map<String,Session> SESSIONS=new HashMap<>();
     private static Context app;
-    static final class Session { String id,page;int width,height,density;Messenger reply;Surface output;VirtualDisplay display;ExplorerActivity activity;boolean ready; }
+    static final class Session {
+        String id,page;int width,height,density;Messenger reply;Surface output;VirtualDisplay display;ExplorerActivity activity;boolean ready;
+    }
     static void init(Context c){app=c.getApplicationContext();}
     static void create(String id,String page,int width,int height,int density,Surface output,Messenger reply){
         if(app==null)return;close(id);
@@ -35,44 +42,69 @@ final class DwFeedRegistry {
             s.display=dm.createVirtualDisplay("DW Feed "+page,width,height,s.density,output,0);
             if(s.display==null||s.display.getDisplay()==null)throw new IllegalStateException("virtual_display_failed");
         }catch(Throwable t){fail(s,"display_create_failed:"+describe(t));return;}
+
         SESSIONS.put(id,s);
-        MAIN.postDelayed(()->{Session q=SESSIONS.get(id);if(q!=null&&!q.ready)fail(q,"activity_timeout");},5000);
         try{
             Intent intent=new Intent(app,DwFeedActivity.class).putExtra(DwFeedProtocol.K_SESSION,id).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_MULTIPLE_TASK|Intent.FLAG_ACTIVITY_NO_ANIMATION);
             ActivityOptions opts=ActivityOptions.makeBasic().setLaunchDisplayId(s.display.getDisplay().getDisplayId());
             app.startActivity(intent,opts.toBundle());
         }catch(Throwable t){
-            if(t instanceof SecurityException)launchViaShizukuAsync(s,describe(t));
-            else fail(s,"activity_launch_failed:"+describe(t));
+            if(t instanceof SecurityException){
+                String shellError=launchViaShizuku(s);
+                if(shellError!=null){fail(s,"activity_launch_failed:"+describe(t)+";"+shellError);return;}
+            }else{fail(s,"activity_launch_failed:"+describe(t));return;}
         }
+        MAIN.postDelayed(()->{Session q=SESSIONS.get(id);if(q!=null&&!q.ready)fail(q,"activity_timeout");},5000);
     }
-    private static void launchViaShizukuAsync(Session s,String normalLaunchError){
-        Thread worker=new Thread(()->{
-            String shellError=launchViaShizukuBlocking(s);
-            if(shellError!=null)MAIN.post(()->{Session q=SESSIONS.get(s.id);if(q==s&&!s.ready)fail(s,"activity_launch_failed:"+normalLaunchError+";"+shellError);});
-        },"DWFeed-display-launch");
-        worker.setDaemon(true);worker.start();
-    }
-    private static String launchViaShizukuBlocking(Session s){
+    /**
+     * Start the shell activity launch without waiting for the shell process on DW's main
+     * looper. DwFeedActivity runs in this same process, so waiting here can deadlock its
+     * lifecycle dispatch. The existing 5-second activity timeout remains the authoritative
+     * success/failure gate.
+     */
+    private static String launchViaShizuku(Session s){
         if(!ShizukuBridge.isAuthorized())return "shizuku_unavailable";
         try{
-            if(s.display==null||s.display.getDisplay()==null)return "display_gone";
             int displayId=s.display.getDisplay().getDisplayId();
-            String cmd="/system/bin/am start --user current --display "+displayId+" -f 0x18010000 -n com.mekromn.dwfilemanager/dw.filemanager.feed.DwFeedActivity --es session "+s.id;
-            Process p=ShizukuBridge.startCommand(cmd);if(p==null)return "shizuku_process_null";
-            int code=p.waitFor();return code==0?null:"shizuku_exit_"+code;
+            String cmd="/system/bin/am start --user current --display "+displayId+
+                    " -f 0x18010000 -n com.mekromn.dwfilemanager/dw.filemanager.feed.DwFeedActivity --es session "+s.id;
+            Process p=ShizukuBridge.startCommand(cmd);
+            return p==null?"shizuku_process_null":null;
         }catch(Throwable t){return "shizuku_exception:"+describe(t);}
     }
     static void activityReady(ExplorerActivity activity,String id){
         Session s=SESSIONS.get(id);if(s==null){activity.finish();return;}s.activity=activity;
-        try{View decor=activity.getWindow().getDecorView();decor.post(()->{Session q=SESSIONS.get(id);if(q!=s||q.activity==null)return;try{q.activity.A(q.page);decor.postDelayed(()->markReady(q),120);}catch(Throwable t){fail(q,"navigate_failed:"+describe(t));}});}catch(Throwable t){fail(s,"activity_ready_failed:"+describe(t));}
+        try{
+            View decor=activity.getWindow().getDecorView();
+            decor.post(()->{
+                Session q=SESSIONS.get(id);if(q!=s||q.activity==null)return;
+                try{q.activity.A(q.page);decor.postDelayed(()->markReady(q),120);}
+                catch(Throwable t){fail(q,"navigate_failed:"+describe(t));}
+            });
+        }catch(Throwable t){fail(s,"activity_ready_failed:"+describe(t));}
     }
-    private static void markReady(Session s){if(s==null||SESSIONS.get(s.id)!=s||s.ready)return;try{Bundle b=new Bundle();b.putString(DwFeedProtocol.K_SESSION,s.id);Message m=Message.obtain(null,DwFeedProtocol.MSG_READY);m.setData(b);s.reply.send(m);s.ready=true;}catch(Throwable t){fail(s,"ready_failed:"+describe(t));}}
-    static void input(String id,MotionEvent event){Session s=SESSIONS.get(id);if(s==null||s.activity==null||event==null){if(event!=null)event.recycle();return;}MotionEvent copy=MotionEvent.obtain(event);event.recycle();MAIN.post(()->{try{if(SESSIONS.get(id)==s&&s.activity!=null)s.activity.dispatchTouchEvent(copy);}finally{copy.recycle();}});}
+    private static void markReady(Session s){
+        if(s==null||SESSIONS.get(s.id)!=s||s.ready)return;
+        try{Bundle b=new Bundle();b.putString(DwFeedProtocol.K_SESSION,s.id);Message m=Message.obtain(null,DwFeedProtocol.MSG_READY);m.setData(b);s.reply.send(m);s.ready=true;}
+        catch(Throwable t){fail(s,"ready_failed:"+describe(t));}
+    }
+    static void input(String id,MotionEvent event){
+        Session s=SESSIONS.get(id);if(s==null||s.activity==null||event==null){if(event!=null)event.recycle();return;}
+        MotionEvent copy=MotionEvent.obtain(event);event.recycle();
+        MAIN.post(()->{try{if(SESSIONS.get(id)==s&&s.activity!=null)s.activity.dispatchTouchEvent(copy);}finally{copy.recycle();}});
+    }
     static void close(String id){Session s=SESSIONS.remove(id);if(s==null)return;cleanup(s);}
-    private static void cleanup(Session s){try{if(s.activity!=null)s.activity.finish();}catch(Throwable ignored){}try{if(s.display!=null)s.display.release();}catch(Throwable ignored){}try{if(s.output!=null)s.output.release();}catch(Throwable ignored){}}
+    private static void cleanup(Session s){
+        try{if(s.activity!=null)s.activity.finish();}catch(Throwable ignored){}
+        try{if(s.display!=null)s.display.release();}catch(Throwable ignored){}
+        try{if(s.output!=null)s.output.release();}catch(Throwable ignored){}
+    }
     private static void fail(Session s,String why){if(s==null)return;sendError(s.reply,s.id,why);if(s.id!=null&&SESSIONS.get(s.id)==s)SESSIONS.remove(s.id);cleanup(s);}
-    private static String describe(Throwable t){if(t==null)return "Unknown";String type=t.getClass().getSimpleName();String msg=t.getMessage();if(msg==null||msg.length()==0)return type;msg=msg.replace('\n',' ').replace('\r',' ').replace('\t',' ');while(msg.contains("  "))msg=msg.replace("  "," ");if(msg.length()>180)msg=msg.substring(0,180);return type+":"+msg;}
+    private static String describe(Throwable t){
+        if(t==null)return "Unknown";String type=t.getClass().getSimpleName();String msg=t.getMessage();
+        if(msg==null||msg.length()==0)return type;msg=msg.replace('\n',' ').replace('\r',' ').replace('\t',' ');
+        while(msg.contains("  "))msg=msg.replace("  "," ");if(msg.length()>180)msg=msg.substring(0,180);return type+":"+msg;
+    }
     private static void sendError(Messenger reply,String id,String why){if(reply==null)return;try{Bundle b=new Bundle();b.putString(DwFeedProtocol.K_SESSION,id);b.putString(DwFeedProtocol.K_ERROR,why);Message m=Message.obtain(null,DwFeedProtocol.MSG_ERROR);m.setData(b);reply.send(m);}catch(Throwable ignored){}}
     private DwFeedRegistry(){}
 }
